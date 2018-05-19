@@ -2,8 +2,39 @@ module Haddock.Backends.Hyperlinker.Types where
 
 
 import qualified GHC
+import qualified Name
+import qualified Module
 
 import Data.Map (Map)
+import Data.Array (Array)
+
+data HieToken = HieToken
+    { htkInfo :: TokenType
+    , htkSpan :: Span
+    , htkDetails :: Maybe TokenDetails
+    , htkType :: Maybe TypeIndex
+    } deriving Show
+
+type TypeIndex = Int
+
+data HieAST =
+    Leaf HieToken
+  | Node
+    { nodeInfo :: NodeInfo
+    , nodeSpan :: Span
+    , nodeChildren :: [HieAST]
+    } deriving Show
+
+data HieFile = HieFile
+    { hieVersion :: String
+    , ghcVersion :: String
+    , hsFile     :: String
+    , hieTypes   :: Array TypeIndex GHC.Type
+    , hieAST     :: HieAST
+    , hsSrc      :: String
+    }
+
+type NodeInfo = [String]
 
 data Token = Token
     { tkType :: TokenType
@@ -43,7 +74,12 @@ data TokenDetails
     | RtkBind GHC.Name
     | RtkDecl GHC.Name
     | RtkModule GHC.ModuleName
-    deriving (Eq)
+    deriving (Eq, Show)
+
+instance Show Name.Name where
+  show = Name.nameStableString
+instance Show GHC.ModuleName where
+  show = Module.moduleNameString
 
 
 rtkName :: TokenDetails -> Either GHC.Name GHC.ModuleName

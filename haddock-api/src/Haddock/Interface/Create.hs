@@ -30,6 +30,7 @@ import Haddock.Interface.LexParseRn
 import Haddock.Backends.Hyperlinker.Types
 import Haddock.Backends.Hyperlinker.Ast as Hyperlinker
 import Haddock.Backends.Hyperlinker.Parser as Hyperlinker
+import Haddock.Backends.Hyperlinker.HieAst as Hie
 
 import Data.Bifunctor
 import Data.Bitraversable
@@ -1197,6 +1198,7 @@ mkTokenizedSrc dflags ms src = do
   -- we run out of file descriptors (see #495)
   rawSrc <- BS.readFile (msHsFilePath ms) >>= evaluate
   let tokens = Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
+  print $ Hie.enrichHie src tokens
   return $ Hyperlinker.enrich src tokens
   where
     filepath = msHsFilePath ms
