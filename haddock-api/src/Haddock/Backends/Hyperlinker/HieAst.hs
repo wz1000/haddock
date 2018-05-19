@@ -200,6 +200,7 @@ enrichHie src toks = Node ["Module"] spanFile (go src)
         GHC.HsIPBinds ipbinds -> mkNode "HsIPBinds" []
         GHC.HsValBinds valBinds -> mkNode "HsValBinds" $ goLocalVals valBinds
       where mkNode cons children = pure $ Node [cons, "HsLocalBindsLR"] span children
+    goLocalBinds _ = []
 
     goRecordUpds _ = []
 
