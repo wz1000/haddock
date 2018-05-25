@@ -8,21 +8,21 @@ import qualified Module
 import Data.Map (Map)
 import Data.Array (Array)
 
-data HieToken = HieToken
-    { htkInfo :: TokenType
-    , htkSpan :: Span
+data HieToken a = HieToken
+    { htkSpan :: Span
+    , htkInfo :: Maybe TokenType
     , htkDetails :: Maybe TokenDetails
-    , htkType :: Maybe TypeIndex
+    , htkType :: Maybe a
     } deriving Show
 
 type TypeIndex = Int
 
-data HieAST =
-    Leaf HieToken
+data HieAST a =
+    Leaf (HieToken a)
   | Node
-    { nodeInfo :: NodeInfo
+    { nodeInfo :: NodeInfo a
     , nodeSpan :: Span
-    , nodeChildren :: [HieAST]
+    , nodeChildren :: [HieAST a]
     } deriving Show
 
 data HieFile = HieFile
@@ -30,11 +30,14 @@ data HieFile = HieFile
     , ghcVersion :: String
     , hsFile     :: String
     , hieTypes   :: Array TypeIndex GHC.Type
-    , hieAST     :: HieAST
+    , hieAST     :: HieAST TypeIndex
     , hsSrc      :: String
     }
 
-type NodeInfo = [String]
+data NodeInfo a = NodeInfo 
+    { nodeAnnotations :: [(String,String)] -- Constr, Type
+    , nodeType :: Maybe a
+    } deriving Show
 
 data Token = Token
     { tkType :: TokenType
