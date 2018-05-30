@@ -2,6 +2,7 @@ module Haddock.Backends.Hyperlinker.Types where
 
 
 import qualified GHC
+import qualified Outputable as GHC
 import qualified Name
 import qualified Module
 
@@ -12,10 +13,16 @@ data HieToken a = HieToken
     { htkSpan :: Span
     , htkInfo :: Maybe TokenType
     , htkDetails :: Maybe TokenDetails
-    , htkType :: Maybe a
     } deriving Show
 
 type TypeIndex = Int
+
+ppHie :: Show a => HieAST a -> String
+ppHie = go 0
+  where
+    pad n = replicate n ' '
+    go n (Leaf a) = pad n ++ show a ++ "\n"
+    go n (Node inf sp children) = pad n ++ "Node " ++ show sp ++ show inf ++ "\n" ++ concatMap (go (n+2)) children
 
 data HieAST a =
     Leaf (HieToken a)
@@ -81,6 +88,8 @@ data TokenDetails
 
 instance Show Name.Name where
   show = Name.nameStableString
+instance Show GHC.Type where
+  show = GHC.showSDocUnsafe . GHC.ppr
 instance Show GHC.ModuleName where
   show = Module.moduleNameString
 

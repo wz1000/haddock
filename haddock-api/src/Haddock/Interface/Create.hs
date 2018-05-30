@@ -1179,6 +1179,13 @@ mkMaybeTokenizedSrc :: DynFlags -> [Flag] -> TypecheckedModule
 mkMaybeTokenizedSrc dflags flags tm
     | Flag_HyperlinkedSource `elem` flags = case renamedSource tm of
         Just src -> do
+            liftGhcToErrMsgGhc $ do 
+              toks <- liftIO $ do
+                rawSrc <- BS.readFile (msHsFilePath summary) >>= evaluate
+                let filepath = msHsFilePath summary
+                return $ Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
+              hieAst <- Hie.enrichHie (tm_typechecked_source tm) src toks
+              liftIO $ putStrLn $ ppHie hieAst
             tokens <- liftGhcToErrMsgGhc (liftIO (mkTokenizedSrc dflags summary src))
             return $ Just tokens
         Nothing -> do
@@ -1198,7 +1205,6 @@ mkTokenizedSrc dflags ms src = do
   -- we run out of file descriptors (see #495)
   rawSrc <- BS.readFile (msHsFilePath ms) >>= evaluate
   let tokens = Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
-  print $ Hie.enrichHie src tokens
   return $ Hyperlinker.enrich src tokens
   where
     filepath = msHsFilePath ms
