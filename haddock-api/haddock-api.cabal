@@ -97,6 +97,7 @@ library
     Haddock.Backends.Hyperlinker
     Haddock.Backends.Hyperlinker.Ast
     Haddock.Backends.Hyperlinker.HieAst
+    Haddock.Backends.Hyperlinker.HieUtils
     Haddock.Backends.Hyperlinker.Parser
     Haddock.Backends.Hyperlinker.Renderer
     Haddock.Backends.Hyperlinker.Types
