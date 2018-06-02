@@ -1180,11 +1180,11 @@ instance ToHie (Located HsIPName) where
 
 instance ToHie (LHsExpr a) => ToHie (Located (HsSplice a)) where
   toHie (L (RealSrcSpan span) sp) = concatM $ case sp of
-      HsTypedSplice _ _ expr -> 
+      HsTypedSplice _ _ expr ->
         [ mkNode "HsTypedSplice"
         , toHie expr
         ]
-      HsUntypedSplice _ _ expr -> 
+      HsUntypedSplice _ _ expr ->
         [ mkNode "HsUnTypedSplice"
         , toHie expr
         ]
@@ -1412,7 +1412,7 @@ instance ToHie (LImportDecl GhcRn) where
         , toHie as
         , maybe (pure []) goIE hidden
         ]
-    where 
+    where
       mkNode cons = pure [Node (simpleNodeInfo cons "ImportDecl") span []]
       goIE (_, (L sp liens)) = concatM $
         [ pure $ locOnly sp
@@ -1422,7 +1422,7 @@ instance ToHie (LImportDecl GhcRn) where
 
 instance ToHie (LIE GhcRn) where
   toHie (L (RealSrcSpan span) ie) = concatM $ case ie of
-      IEVar n -> 
+      IEVar n ->
         [ mkNode "IEVar"
         , toHie n
         ]
@@ -1472,7 +1472,7 @@ instance ToHie (LIEWrappedName Name) where
         ]
     where mkNode cons = pure [Node (simpleNodeInfo cons "IEWrappedName") span []]
   toHie _ = pure []
-  
+
 instance ToHie (Located (FieldLbl Name)) where
   toHie (L sp@(RealSrcSpan span) lbl) = concatM $ case lbl of
       FieldLabel _ _ n ->
