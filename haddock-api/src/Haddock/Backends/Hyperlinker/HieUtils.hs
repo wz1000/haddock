@@ -1,5 +1,6 @@
 module Haddock.Backends.Hyperlinker.HieUtils where
 
+import Prelude hiding (span)
 import Haddock.Backends.Hyperlinker.Types
 import SrcLoc
 import Control.Applicative
@@ -14,7 +15,7 @@ validAst (Node _ span children) = all validAst children
                                && all ((span `containsSpan`) . astSpan) children
                                && astSorted children
   where astSorted [] = True
-        astSorted [x] = True
+        astSorted [_] = True
         astSorted (x:y:xs) = astSpan x `leftOf` astSpan y && astSorted (y:xs)
 
 combineNodeInfo :: NodeInfo a -> NodeInfo a -> NodeInfo a
@@ -34,7 +35,7 @@ combineAst a (Node xs span children) = Node xs span (insertAst a children) -- a 
 
 -- | Insert an AST in a sorted list of disjoint Asts
 insertAst :: HieAST a -> [HieAST a] -> [HieAST a]
-insertAst x xs = mergeAsts [x] xs
+insertAst x = mergeAsts [x]
 
 -- Merge two sorted, disjoint lists of ASTs, combining when necessary
 mergeAsts :: [HieAST a] -> [HieAST a] -> [HieAST a]
@@ -45,7 +46,7 @@ mergeAsts xs@(a:as) ys@(b:bs)
   | astSpan b `containsSpan` astSpan a = mergeAsts as (combineAst a b : bs)
   | astSpan a `rightOf` astSpan b = b : mergeAsts xs bs
   | astSpan a `leftOf`  astSpan b = a : mergeAsts as ys
-  | otherwise = error $ "mergeAsts: Spans overlapping "
+  | otherwise = error $ "mergeAsts: Spans overlapping " ++ show (astSpan a) ++ " and " ++ show (astSpan b)
 
 rightOf :: Span -> Span -> Bool
 rightOf s1 s2
