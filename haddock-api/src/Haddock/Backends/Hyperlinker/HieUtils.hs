@@ -2,6 +2,7 @@ module Haddock.Backends.Hyperlinker.HieUtils where
 
 import Prelude hiding (span)
 import Haddock.Backends.Hyperlinker.Types
+import Haddock.Backends.Hyperlinker.HieTypes
 import SrcLoc
 import Control.Applicative
 

@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-module Haddock.Backends.Hyperlinker.HieAst (validAst, enrichHie) where
+module Haddock.Backends.Hyperlinker.HieAst (validAst, enrichHie, ppHie) where
 
 import GHC hiding (exprType, Token)
 import Class (FunDep)
@@ -23,6 +23,7 @@ import CoreUtils (exprType)
 import SrcLoc (mkRealSrcSpan, mkRealSrcLoc)
 
 import Haddock.Backends.Hyperlinker.Types
+import Haddock.Backends.Hyperlinker.HieTypes
 import Haddock.Backends.Hyperlinker.HieUtils
 
 import Prelude hiding (span)
