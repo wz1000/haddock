@@ -1194,7 +1194,15 @@ mkMaybeTokenizedSrc :: DynFlags -> [Flag] -> TypecheckedModule
 mkMaybeTokenizedSrc dflags flags tm
     | Flag_HyperlinkedSource `elem` flags = case renamedSource tm of
         Just src -> do
-            tokens <- liftGhcToErrMsgGhc (liftIO (mkTokenizedSrc dflags summary src))
+            liftGhcToErrMsgGhc $ do
+              -- toks <- liftIO $ do
+              --   rawSrc <- BS.readFile (msHsFilePath summary) >>= evaluate
+              --   let filepath = msHsFilePath summary
+              --   return $ Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
+              hieAst <- Hie.enrichHie (tm_typechecked_source tm) src []
+              liftIO $ putStrLn $ Hie.ppHie hieAst
+              liftIO $ print $ Hie.validAst hieAst
+            tokens <- liftGhcToErrMsgGhc . liftIO $ mkTokenizedSrc summary src
             return $ Just tokens
         Nothing -> do
             liftErrMsg . tell . pure $ concat
