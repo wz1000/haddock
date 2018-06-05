@@ -60,7 +60,6 @@ enrichHie ts rs@(hsGrp, imports, exports, _) toks = do
       , toHie $ hs_warnds grp
       , toHie $ hs_annds grp
       , toHie $ hs_ruleds grp
-      , toHie $ hs_vects grp
       ]
 
 --    toHieToken (Token inf _ span) = Leaf (HieToken span (Just inf) Nothing)
@@ -98,9 +97,9 @@ data Context a = Bind a | Use a
 instance ToHie (Located ModuleName) where
   toHie (L (RealSrcSpan span) name) = pure $ [Leaf $ HieToken span Nothing (Just $ RtkModule name)]
   toHie _ = pure []
-instance ToHie (Context (Located PlaceHolder)) where
-  toHie _ = pure []
 instance ToHie (Context (Located Var)) where
+  toHie _ = pure []
+instance ToHie (Context (Located NoExt)) where
   toHie _ = pure []
 instance ToHie (Context (Located Name)) where
   toHie c = case c of
@@ -120,13 +119,15 @@ instance ToHie (LHsWcType GhcTc) where
   toHie _ = pure []
 instance ToHie (LSig GhcTc) where
   toHie _ = pure []
+instance ToHie Type where
+  toHie _ = pure []
 
 instance HasType (LHsBind GhcRn) where
   getTypeNode _ cons typ spn = pure [makeNode cons typ spn]
 
 instance HasType (LHsBind GhcTc) where
   getTypeNode (L _ bind) cons typ spn = case bind of
-      FunBind name _ _ _ _ -> pure [makeTypeNode cons typ spn (varType $ unLoc name)]
+      FunBind{fun_id = name} -> pure [makeTypeNode cons typ spn (varType $ unLoc name)]
       _ -> pure $ [makeNode cons typ spn]
 
 instance HasType (LPat GhcRn) where
@@ -152,25 +153,25 @@ instance ( ToHie (Context (Located (IdP a)))
          , HasType (LHsBind a)
          ) => ToHie (LHsBind a) where
   toHie b@(L (RealSrcSpan span) bind) = concatM $ case bind of
-      FunBind name matches _ _ _ ->
+      FunBind{fun_id = name, fun_matches = matches} ->
         [ mkTypeNode "FunBind"
         , toHie $ Bind name
         , toHie matches
         ]
-      PatBind lhs rhs _ _ _ ->
+      PatBind{pat_lhs = lhs, pat_rhs = rhs} ->
         [ mkNode "PatBind"
         , toHie lhs
         , toHie rhs
         ]
-      VarBind _ expr _ ->
+      VarBind{var_rhs = expr} ->
         [ mkNode "VarBind"
         , toHie expr
         ]
-      AbsBinds _ _ _ _ binds _ ->
+      AbsBinds{abs_binds = binds} ->
         [ mkNode "AbsBinds"
         , toHie binds
         ]
-      PatSynBind psb ->
+      PatSynBind _ psb ->
         [ mkNode "PatSynBind"
         , toHie psb
         ]
@@ -189,7 +190,7 @@ instance ( ToHie (LMatch a body)
 instance ( ToHie (Context (Located (IdP a)))
          , ToHie (LPat a)
          ) => ToHie (PatSynBind a a) where
-    toHie (PSB var _ dets pat _) = concatM
+    toHie PSB{psb_id=var, psb_args=dets, psb_def=pat} = concatM
       [ toHie $ Use var
       , toHie $ toBind dets
       , toHie pat
@@ -213,48 +214,45 @@ instance ( ToHie (Context (Located (IdP a)))
          , ToHie (HsRecFields a (LPat a))
          , ToHie (LHsExpr a)
          , ToHie (LHsSigWcType a)
+         , ToHie (XSigPat a)
          , HasType (LPat a)
          ) => ToHie (LPat a) where
   toHie lpat@(L ospan@(RealSrcSpan pspan) opat) = concatM $ case opat of
       WildPat _ ->
         [ mkNode "WildPat"
         ]
-      VarPat lname ->
+      VarPat _ lname ->
         [ mkNode "VarPat"
         , toHie $ Bind lname
         ]
-      LazyPat p ->
+      LazyPat _ p ->
         [ mkNode "LazyPat"
         , toHie p
         ]
-      AsPat lname pat ->
+      AsPat _ lname pat ->
         [ mkNode "AsPat"
         , toHie $ Bind lname
         , toHie pat
         ]
-      ParPat pat ->
+      ParPat _ pat ->
         [ mkNode "ParPat"
         , toHie pat
         ]
-      BangPat pat ->
+      BangPat _ pat ->
         [ mkNode "BangPat"
         , toHie pat
         ]
-      ListPat pats _ _ ->
+      ListPat _ pats ->
         [ mkNode "ListPat"
         , toHie pats
         ]
-      TuplePat pats _ _ ->
+      TuplePat _ pats _ ->
         [ mkNode "TuplePat"
         , toHie pats
         ]
-      SumPat pat _ _ _ ->
+      SumPat _ pat _ _ ->
         [ mkNode "SumPat"
         , toHie pat
-        ]
-      PArrPat pats _ ->
-        [ mkNode "PArrPat"
-        , toHie pats
         ]
       ConPatIn c dets ->
         [ mkNode "ConPatIn"
@@ -266,35 +264,31 @@ instance ( ToHie (Context (Located (IdP a)))
         , toHie $ Use $ fmap conLikeName con
         , toHie dets
         ]
-      ViewPat expr pat _ ->
+      ViewPat _ expr pat ->
         [ mkNode "ViewPat"
         , toHie expr
         , toHie pat
         ]
-      SplicePat sp ->
+      SplicePat _ sp ->
         [ mkNode "SplicePat"
         , toHie $ L ospan sp
         ]
-      LitPat _ ->
+      LitPat _ _ ->
         [ mkNode "LitPat"
         ]
       NPat _ _ _ _ ->
         [ mkNode "NPat"
         ]
-      NPlusKPat n _ _ _ _ _ ->
+      NPlusKPat _ n _ _ _ _ ->
         [ mkNode "NPlusKPat"
         , toHie $ Bind n
         ]
-      SigPatIn pat sig ->
+      SigPat sig pat ->
         [ mkNode "SigPatIn"
         , toHie pat
         , toHie sig
         ]
-      SigPatOut pat _ ->
-        [ mkNode "SigPatOut"
-        , toHie pat
-        ]
-      CoPat _ _ _ ->
+      CoPat _ _ _ _ ->
         [ mkNode "CoPat"
         ]
     where mkNode cons = getTypeNode lpat cons "Pat" pspan
@@ -304,7 +298,7 @@ instance ( ToHie body
          , ToHie (LGRHS a body)
          , ToHie (LHsLocalBinds a)
          ) => ToHie (GRHSs a body) where
-  toHie (GRHSs grhss binds) = concatM
+  toHie (GRHSs _ grhss binds) = concatM
     [ toHie grhss
     , toHie binds
     ]
@@ -312,7 +306,7 @@ instance ( ToHie body
 instance ( ToHie body
          , ToHie (GuardLStmt a)
          ) => ToHie (LGRHS a body) where
-  toHie (L (RealSrcSpan span) (GRHS guards body)) = concatM
+  toHie (L (RealSrcSpan span) (GRHS _ guards body)) = concatM
     [ pure [Node (simpleNodeInfo "GRHS" "GRHS") span []]
     , toHie guards
     , toHie body
@@ -329,91 +323,93 @@ instance ( ToHie (Context (Located (IdP a)))
          , ToHie (HsRecFields a (LPat a))
          , ToHie (GuardLStmt a)
          , ToHie (LHsLocalBinds a)
-         , ToHie (LHsSigWcType a)
-         , ToHie (LHsWcType a)
+         , ToHie (XAppTypeE a)
+         , ToHie (XExprWithTySig a)
          ) => ToHie (LHsExpr a) where
   toHie e@(L mspan oexpr) = concatM $ case oexpr of
-      HsVar v ->
+      HsVar _ v ->
         [ mkNode "HsVar"
         , toHie $ Use v
         ]
-      HsConLikeOut con ->
+      HsUnboundVar _ _ ->
+        [ mkNode "HsUnboundVar"
+        ]
+      HsConLikeOut _ con ->
         [ mkNode "ConLikeOut"
         , toHie $ Use $ L mspan $ conLikeName con
         ]
-      HsRecFld fld ->
+      HsRecFld _ fld ->
         [ mkNode "HsRecFld"
         , toHie (L mspan fld)
         ]
-      HsOverLabel _ _ ->
+      HsOverLabel _ _ _ ->
         [ mkNode "HsOverLable"
         ]
-      HsOverLit _ ->
+      HsIPVar _ _ ->
+        [ mkNode "HsIPVar"
+        ]
+      HsOverLit _ _ ->
         [ mkNode "HsOverLit"
         ]
-      HsLit _ ->
+      HsLit _ _ ->
         [ mkNode "HsLit"
         ]
-      HsLam mg ->
+      HsLam _ mg ->
         [ mkNode "HsLam"
         , toHie mg
         ]
-      HsLamCase mg ->
+      HsLamCase _ mg ->
         [ mkNode "HsLamCase"
         , toHie mg
         ]
-      HsApp a b ->
+      HsApp _ a b ->
         [ mkNode "HsApp"
         , toHie a
         , toHie b
         ]
-      HsAppType expr sig ->
+      HsAppType sig expr ->
         [ mkNode "HsAppType"
         , toHie expr
         , toHie sig
         ]
-      HsAppTypeOut expr _ ->
-        [ mkNode "HsAppTypeOut"
-        , toHie expr
-        ]
-      OpApp a b _ c ->
+      OpApp _ a b c ->
         [ mkNode "OpApp"
         , toHie a
         , toHie b
         , toHie c
         ]
-      NegApp a _ ->
+      NegApp _ a _ ->
         [ mkNode "NegApp"
         , toHie a
         ]
-      HsPar a ->
+      HsPar _ a ->
         [ mkNode "HsPar"
         , toHie a
         ]
-      SectionL a b ->
+      SectionL _ a b ->
         [ mkNode "SectionL"
         , toHie a
         , toHie b
         ]
-      SectionR a b ->
+      SectionR _ a b ->
         [ mkNode "SectionR"
         , toHie a
         , toHie b
         ]
-      ExplicitTuple args _ ->
+      ExplicitTuple _ args _ ->
         [ mkNode "ExplicitTyple"
         , toHie args
         ]
-      ExplicitSum _ _ expr _ ->
+      ExplicitSum _ _ _ expr ->
         [ mkNode "ExplicitSum"
         , toHie expr
         ]
-      HsCase expr matches ->
+      HsCase _ expr matches ->
         [ mkNode "HsCase"
         , toHie expr
         , toHie matches
         ]
-      HsIf _ a b c ->
+      HsIf _ _ a b c ->
         [ mkNode "HsIf"
         , toHie a
         , toHie b
@@ -423,22 +419,18 @@ instance ( ToHie (Context (Located (IdP a)))
         [ mkNode "HsMultiIf"
         , toHie grhss
         ]
-      HsLet binds expr ->
+      HsLet _ binds expr ->
         [ mkNode "HsLet"
         , toHie binds
         , toHie expr
         ]
-      HsDo _ (L ispan stmts) _ ->
+      HsDo _ _ (L ispan stmts) ->
         [ mkNode "HsDo"
         , pure $ locOnly ispan
         , toHie stmts
         ]
       ExplicitList _ _ exprs ->
         [ mkNode "ExplicitList"
-        , toHie exprs
-        ]
-      ExplicitPArr _ exprs ->
-        [ mkNode "ExplicitPArr"
         , toHie exprs
         ]
       RecordCon {rcon_con_name = name, rcon_flds = binds}->
@@ -451,32 +443,24 @@ instance ( ToHie (Context (Located (IdP a)))
         , toHie expr
         , toHie upds
         ]
-      ExprWithTySig expr sig ->
+      ExprWithTySig sig expr ->
         [ mkNode "ExprWithTySig"
         , toHie expr
         , toHie sig
-        ]
-      ExprWithTySigOut expr _ ->
-        [ mkNode "ExprWithTySigOut"
-        , toHie expr
         ]
       ArithSeq _ _ info ->
         [ mkNode "ArithSeq"
         , toHie info
         ]
-      PArrSeq _ info ->
-        [ mkNode "PArrSeq"
-        , toHie info
-        ]
-      HsSCC _ _ expr ->
+      HsSCC _ _ _ expr ->
         [ mkNode "HsSCC"
         , toHie expr
         ]
-      HsCoreAnn _ _ expr ->
+      HsCoreAnn _ _ _ expr ->
         [ mkNode "HsCoreAnn"
         , toHie expr
         ]
-      HsProc pat cmdtop ->
+      HsProc _ pat cmdtop ->
         [ mkNode "HsProc"
         , toHie pat
         , toHie cmdtop
@@ -485,69 +469,63 @@ instance ( ToHie (Context (Located (IdP a)))
         [ mkNode "HsStatic"
         , toHie expr
         ]
-      HsArrApp a b _ _ _ ->
+      HsArrApp _ a b _ _ ->
         [ mkNode "HsArrApp"
         , toHie a
         , toHie b
         ]
-      HsArrForm expr _ cmds ->
+      HsArrForm _ expr _ cmds ->
         [ mkNode "HsArrForm"
         , toHie expr
         , toHie cmds
         ]
-      HsTick _ expr ->
+      HsTick _ _ expr ->
         [ mkNode "HsTick"
         , toHie expr
         ]
-      HsBinTick _ _ expr ->
+      HsBinTick _ _ _ expr ->
         [ mkNode "HsBinTick"
         , toHie expr
         ]
-      HsTickPragma _ _ _ expr ->
+      HsTickPragma _ _ _ _ expr ->
         [ mkNode "HsTickPragma"
         , toHie expr
         ]
-      HsWrap _ _ ->
+      HsWrap _ _ _ ->
         [ mkNode "HsWrap"
         ]
-      HsUnboundVar _ ->
-        [ mkNode "HsUnboundVar"
-        ]
-      HsIPVar _ ->
-        [ mkNode "HsIPVar"
-        ]
-      HsBracket b ->
+      HsBracket _ b ->
         [ mkNode "HsBracket p"
         , toHie b
         ]
-      HsRnBracketOut b p ->
+      HsRnBracketOut _ b p ->
         [ mkNode "HsRnBracketOut"
         , toHie b
         , toHie p
         ]
-      HsTcBracketOut b p ->
+      HsTcBracketOut _ b p ->
         [ mkNode "HsTcBracketOut"
         , toHie b
         , toHie p
         ]
-      HsSpliceE x ->
+      HsSpliceE _ x ->
         [ mkNode "HsSpliceE"
         , toHie $ L mspan x
         ]
-      EWildPat ->
+      EWildPat _ ->
         [ mkNode "EWildPat"
         ]
-      EAsPat a b ->
+      EAsPat _ a b ->
         [ mkNode "EAsPat"
         , toHie $ Use a
         , toHie b
         ]
-      EViewPat a b ->
+      EViewPat _ a b ->
         [ mkNode "EViewPat"
         , toHie a
         , toHie b
         ]
-      ELazyPat a ->
+      ELazyPat _ a ->
         [ mkNode "ELazyPat"
         , toHie a
         ]
@@ -559,7 +537,7 @@ instance ( ToHie (Context (Located (IdP a)))
 instance ( ToHie (LHsExpr a)
          ) => ToHie (LHsTupArg a) where
   toHie (L (RealSrcSpan span) arg) = concatM $ case arg of
-    Present expr ->
+    Present _ expr ->
       [ mkNode "Present"
       , toHie expr
       ]
@@ -574,30 +552,30 @@ instance ( ToHie (LPat a)
          , ToHie body
          ) => ToHie (LStmt a body) where
   toHie (L (RealSrcSpan span) stmt) = concatM $ case stmt of
-      LastStmt body _ _ ->
+      LastStmt _ body _ _ ->
         [ mkNode "LastStmt"
         , toHie body
         ]
-      BindStmt pat body _ _ _ ->
+      BindStmt _ pat body _ _ ->
         [ mkNode "BindStmt"
         , toHie pat
         , toHie body
         ]
-      ApplicativeStmt stmts _ _ ->
+      ApplicativeStmt _ stmts _ ->
         [ mkNode "ApplicativeStmt"
         , concatMapM (toHie . snd) stmts
         ]
-      BodyStmt body _ _ _ ->
+      BodyStmt _ body _ _ ->
         [ mkNode "BodyStmt"
         , toHie body
         ]
-      LetStmt binds ->
+      LetStmt _ binds ->
         [ mkNode "LetStmt"
         , toHie binds
         ]
-      ParStmt parstmts _ _ _ ->
+      ParStmt _ parstmts _ _ ->
         [ mkNode "ParStmt"
-        , concatMapM (\(ParStmtBlock stmts _ _) -> toHie stmts) parstmts
+        , concatMapM (\(ParStmtBlock _ stmts _ _) -> toHie stmts) parstmts
         ]
       TransStmt {trS_stmts = stmts, trS_using = using, trS_by = by} ->
         [ mkNode "TransStmt"
@@ -618,9 +596,9 @@ instance ( ToHie (LHsExpr a)
          , ToHie (LSig a)
          ) => ToHie (LHsLocalBinds a) where
   toHie (L (RealSrcSpan span) binds) = concatM $ case binds of
-      EmptyLocalBinds -> [mkNode "EmptyLocalBinds"]
-      HsIPBinds _ -> [mkNode "HsIPBinds"]
-      HsValBinds valBinds ->
+      EmptyLocalBinds _ -> [mkNode "EmptyLocalBinds"]
+      HsIPBinds _ _ -> [mkNode "HsIPBinds"]
+      HsValBinds _ valBinds ->
         [ mkNode "HsValBinds"
         , toHie valBinds
         ]
@@ -632,18 +610,12 @@ instance ( ToHie (LHsBind a)
          , ToHie (LHsExpr a)
          , ToHie (LSig a)
          ) => ToHie (HsValBindsLR a a) where
-  toHie (ValBindsIn binds sigs) = concatM
+  toHie (ValBinds _ binds sigs) = concatM
     [ toHie binds
     , toHie sigs
     ]
-  toHie (ValBindsOut binds sigs) = concatM
-    [ toHie $ concatMap (bagToList . snd) binds
-    , toHie sigs
-    ]
 
-instance ( ToHie (Context (Located (PostRn a (IdP a))))
-         , ToHie (Context (Located (PostTc a (IdP a))))
-         , ToHie arg
+instance ( ToHie (LHsRecField a arg)
          ) => ToHie (HsRecFields a arg) where
   toHie (HsRecFields fields _) = toHie fields
 
@@ -656,27 +628,26 @@ instance (ToHie (Located label), ToHie arg) => ToHie (LHsRecField' label arg) wh
       ]
   toHie _ = pure []
 
-instance ( ToHie (Context (Located (PostRn a (IdP a))))
-         , ToHie (Context (Located (PostTc a (IdP a))))
+instance ( ToHie (Context (Located (XFieldOcc a)))
          ) => ToHie (LFieldOcc a) where
-  toHie (L nspan (FieldOcc _ name)) = toHie $ Use $ L nspan name
+  toHie (L nspan (FieldOcc name _)) = toHie $ Use $ L nspan name
 
-instance ( ToHie (Context (Located (PostRn a (IdP a))))
-         , ToHie (Context (Located (PostTc a (IdP a))))
+instance ( ToHie (Context (Located (XUnambiguous a)))
+         , ToHie (Context (Located (XAmbiguous a)))
          ) => ToHie (Located (AmbiguousFieldOcc a)) where
-  toHie (L nspan (Unambiguous _ name)) = toHie $ Use $ L nspan name
-  toHie (L nspan (Ambiguous _ name)) = toHie $ Use $ L nspan name
+  toHie (L nspan (Unambiguous name _)) = toHie $ Use $ L nspan name
+  toHie (L nspan (Ambiguous name _)) = toHie $ Use $ L nspan name
 
 instance ( ToHie (LPat a)
          , ToHie (LHsBind a)
          , ToHie (LHsExpr a)
          , ToHie (LSig a)
-         ) => ToHie (ApplicativeArg a a) where
-  toHie (ApplicativeArgOne pat expr _) = concatM
+         ) => ToHie (ApplicativeArg a) where
+  toHie (ApplicativeArgOne _ pat expr _) = concatM
     [ toHie pat
     , toHie expr
     ]
-  toHie (ApplicativeArgMany stmts _ pat) = concatM
+  toHie (ApplicativeArgMany _ stmts _ pat) = concatM
     [ toHie stmts
     , toHie pat
     ]
@@ -692,7 +663,7 @@ instance ( ToHie (LPat a)
          , ToHie (LSig a)
          ) => ToHie (LHsCmdTop a) where
   toHie (L (RealSrcSpan span) top) = concatM $ case top of
-    HsCmdTop cmd _ _ _ ->
+    HsCmdTop _ cmd ->
       [ pure [Node (simpleNodeInfo "HsCmdTop" "HsCmdTop") span []]
       , toHie cmd
       ]
@@ -704,58 +675,58 @@ instance ( ToHie (LPat a)
          , ToHie (LSig a)
          ) => ToHie (LHsCmd a) where
   toHie (L (RealSrcSpan span) cmd) = concatM $ case cmd of
-      HsCmdArrApp a b _ _ _ ->
+      HsCmdArrApp _ a b _ _ ->
         [ mkNode "HsCmdArrApp"
         , toHie a
         , toHie b
         ]
-      HsCmdArrForm a _ _ cmdtops ->
+      HsCmdArrForm _ a _ _ cmdtops ->
         [ mkNode "HsCmdArrForm"
         , toHie a
         , toHie cmdtops
         ]
-      HsCmdApp a b ->
+      HsCmdApp _ a b ->
         [ mkNode "HsCmdApp"
         , toHie a
         , toHie b
         ]
-      HsCmdLam mg ->
+      HsCmdLam _ mg ->
         [ mkNode "HsCmdLam"
         , toHie mg
         ]
-      HsCmdPar a ->
+      HsCmdPar _ a ->
         [ mkNode "HsCmdPar"
         , toHie a
         ]
-      HsCmdCase expr alts ->
+      HsCmdCase _ expr alts ->
         [ mkNode "HsCmdCase"
         , toHie expr
         , toHie alts
         ]
-      HsCmdIf _ a b c ->
+      HsCmdIf _ _ a b c ->
         [ mkNode "HsCmdIf"
         , toHie a
         , toHie b
         , toHie c
         ]
-      HsCmdLet binds cmd' ->
+      HsCmdLet _ binds cmd' ->
         [ mkNode "HsCmdLet"
         , toHie binds
         , toHie cmd'
         ]
-      HsCmdDo (L ispan stmts) _ ->
+      HsCmdDo _ (L ispan stmts) ->
         [ mkNode "HsCmdDo"
         , pure $ locOnly ispan
         , toHie stmts
         ]
-      HsCmdWrap _ _ ->
+      HsCmdWrap _ _ _ ->
         [ mkNode "HsCmdWrap"
         ]
     where mkNode cons = pure [Node (simpleNodeInfo cons "HsCmd") span []]
   toHie _ = pure []
 
 instance ToHie (TyClGroup GhcRn) where
-  toHie (TyClGroup classes roles instances) = concatM
+  toHie (TyClGroup _ classes roles instances) = concatM
     [ toHie classes
     , toHie roles
     , toHie instances
@@ -804,7 +775,7 @@ instance ToHie (LTyClDecl GhcRn) where
 
 instance ToHie (LFamilyDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      FamilyDecl info name vars _ sig inj ->
+      FamilyDecl _ info name vars _ sig inj ->
         [ mkNode "FamilyDecl"
         , toHie $ Bind name
         , toHie info
@@ -824,13 +795,13 @@ instance ToHie (FamilyInfo GhcRn) where
 
 instance ToHie (LFamilyResultSig GhcRn) where
   toHie (L (RealSrcSpan span) sig) = concatM $ case sig of
-      NoSig ->
+      NoSig _ ->
         [ mkNode "NoSig" ]
-      KindSig k ->
+      KindSig _ k ->
         [ mkNode "KindSig"
         , toHie k
         ]
-      TyVarSig bndr ->
+      TyVarSig _ bndr ->
         [ mkNode "TyVarSig"
         , toHie bndr
         ]
@@ -847,7 +818,7 @@ instance ToHie (Located (FunDep (Located Name))) where
   toHie _ = pure []
 
 instance (ToHie pats, ToHie rhs) => ToHie (FamEqn GhcRn pats rhs) where
-  toHie (FamEqn var pats _ rhs) = concatM $
+  toHie (FamEqn _ var pats _ rhs) = concatM $
     [ toHie $ Bind var
     , toHie pats
     , toHie rhs
@@ -864,7 +835,7 @@ instance ToHie (LInjectivityAnn GhcRn) where
   toHie _ = pure []
 
 instance ToHie (HsDataDefn GhcRn) where
-  toHie (HsDataDefn _ ctx _ mkind cons derivs) = concatM
+  toHie (HsDataDefn _ _ ctx _ mkind cons derivs) = concatM
     [ toHie ctx
     , toHie mkind
     , toHie cons
@@ -879,7 +850,7 @@ instance ToHie (HsDeriving GhcRn) where
 
 instance ToHie (LHsDerivingClause GhcRn) where
   toHie (L (RealSrcSpan span) cl) = concatM $ case cl of
-      HsDerivingClause strat (L ispan tys) ->
+      HsDerivingClause _ strat (L ispan tys) ->
         [ mkNode "HsDerivingClause"
         , toHie strat
         , pure $ locOnly ispan
@@ -888,20 +859,38 @@ instance ToHie (LHsDerivingClause GhcRn) where
     where mkNode cons = pure [Node (simpleNodeInfo cons "HsDerivingClause") span []]
   toHie _ = pure []
 
-instance ToHie (Located DerivStrategy) where
-  toHie (L span _) = pure $ locOnly span
+instance ToHie (Located (DerivStrategy GhcRn)) where
+  toHie (L (RealSrcSpan span) strat) = concatM $ case strat of
+      StockStrategy ->
+        [ mkNode "StockStrategy"
+        ]
+      AnyclassStrategy ->
+        [ mkNode "AnyclassStrategy"
+        ]
+      NewtypeStrategy ->
+        [ mkNode "NewtypeStrategy"
+        ]
+      ViaStrategy s ->
+        [ mkNode "ViaStrategy"
+        , toHie s
+        ]
+    where mkNode cons = pure [Node (simpleNodeInfo cons "DerivStrategy") span []]
+  toHie _ = pure []
 
 instance ToHie (Located OverlapMode) where
   toHie (L span _) = pure $ locOnly span
 
 instance ToHie (LConDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      ConDeclGADT names sig _ ->
+      ConDeclGADT{con_names=names, con_qvars=qvars, con_mb_cxt=ctx, con_args=args, con_res_ty=typ} ->
         [ mkNode "ConDeclGADT"
         , toHie $ map Bind names
-        , toHie sig
+        , toHie qvars
+        , toHie ctx
+        , toHie args
+        , toHie typ
         ]
-      ConDeclH98 name qvars ctx dets _ ->
+      ConDeclH98{con_name=name, con_ex_tvs=qvars, con_mb_cxt=ctx, con_args=dets} ->
         [ mkNode "ConDeclH98"
         , toHie $ Bind name
         , toHie qvars
@@ -918,55 +907,56 @@ instance ToHie (Located [LConDeclField GhcRn]) where
     ]
 
 instance ToHie thing => ToHie (HsImplicitBndrs GhcRn thing) where
-  toHie (HsIB _ a _) = toHie a
+  toHie (HsIB _ a) = toHie a
 
 instance ToHie thing => ToHie (HsWildCardBndrs GhcRn thing) where
   toHie (HsWC _ a) = toHie a
 
 instance ToHie (LSig GhcRn) where
   toHie (L sp@(RealSrcSpan span) sig) = concatM $ case sig of
-      TypeSig names typ ->
+      TypeSig _ names typ ->
         [ mkNode "TypeSig"
         , toHie $ map Use names
         , toHie typ
         ]
-      PatSynSig names typ ->
+      PatSynSig _ names typ ->
         [ mkNode "PatSynSig"
         , toHie $ map Use names
         , toHie typ
         ]
-      ClassOpSig _ names typ ->
+      ClassOpSig _ _ names typ ->
         [ mkNode "ClassOpSig"
         , toHie $ map Bind names
         , toHie typ
         ]
-      IdSig _ -> []
-      FixSig fsig ->
+      IdSig _ _ -> []
+      FixSig _ fsig ->
         [ mkNode "FixSig"
         , toHie $ L sp fsig
         ]
-      InlineSig name _ ->
+      InlineSig _ name _ ->
         [ mkNode "InlineSig"
         , toHie $ Use name
         ]
-      SpecSig name typs _ ->
+      SpecSig _ name typs _ ->
         [ mkNode "SpecSig"
         , toHie $ Use name
         , toHie typs
         ]
-      SpecInstSig _ typ ->
+      SpecInstSig _ _ typ ->
         [ mkNode "SpecInstSig"
         , toHie typ
         ]
-      MinimalSig _ form ->
+      MinimalSig _ _ form ->
         [ mkNode "MinimalSig"
         , toHie form
         ]
-      SCCFunSig _ name _ ->
+      SCCFunSig _ _ name mtxt ->
         [ mkNode "SCCFunSig"
         , toHie $ Use name
+        , pure $ maybe [] (locOnly . getLoc) mtxt
         ]
-      CompleteMatchSig _ (L ispan names) typ ->
+      CompleteMatchSig _ _ (L ispan names) typ ->
         [ mkNode "CompleteMatchSig"
         , pure $ locOnly ispan
         , toHie $ map Use names
@@ -978,93 +968,86 @@ instance ToHie (LSig GhcRn) where
 
 instance ToHie (LHsType GhcRn) where
   toHie (L ospan@(RealSrcSpan span) t) = concatM $ case t of
-      HsForAllTy bndrs body ->
+      HsForAllTy _ bndrs body ->
         [ mkNode "HsForAllTy"
         , toHie bndrs
         , toHie body
         ]
-      HsQualTy ctx body ->
+      HsQualTy _ ctx body ->
         [ mkNode "HsQualTy"
         , toHie ctx
         , toHie body
         ]
-      HsTyVar _ var ->
+      HsTyVar _ _ var ->
         [ mkNode "HsTyVar"
         , toHie $ Use var
         ]
-      HsAppsTy apps ->
+      HsAppsTy _ apps ->
         [ mkNode "HsAppsTy"
         , toHie apps
         ]
-      HsAppTy a b ->
+      HsAppTy _ a b ->
         [ mkNode "HsAppTy"
         , toHie a
         , toHie b
         ]
-      HsFunTy a b ->
+      HsFunTy _ a b ->
         [ mkNode "HsFunTy"
         , toHie a
         , toHie b
         ]
-      HsListTy a ->
+      HsListTy _ a ->
         [ mkNode "HsListTy"
         , toHie a
         ]
-      HsPArrTy a ->
-        [ mkNode "HsPArrTy"
-        , toHie a
-        ]
-      HsTupleTy _ tys ->
+      HsTupleTy _ _ tys ->
         [ mkNode "HsTupleTy"
         , toHie tys
         ]
-      HsSumTy tys ->
+      HsSumTy _ tys ->
         [ mkNode "HsSymTy"
         , toHie tys
         ]
-      HsOpTy a op b ->
+      HsOpTy _ a op b ->
         [ mkNode "HsOpTy"
         , toHie a
         , toHie $ Use op
         , toHie b
         ]
-      HsParTy a ->
+      HsParTy _ a ->
         [ mkNode "HsParTy"
         , toHie a
         ]
-      HsIParamTy ip ty ->
+      HsIParamTy _ ip ty ->
         [ mkNode "IParamTy"
         , toHie ip
         , toHie ty
         ]
-      HsEqTy a b ->
+      HsEqTy _ a b ->
         [ mkNode "HsEqTy"
         , toHie a
         , toHie b
         ]
-      HsKindSig a b ->
+      HsKindSig _ a b ->
         [ mkNode "HsKindSig"
         , toHie a
         , toHie b
         ]
-      HsSpliceTy a _ ->
+      HsSpliceTy _ a ->
         [ mkNode "HsSpliceTy"
         , toHie $ L ospan a
         ]
-      HsDocTy a _ ->
+      HsDocTy _ a _ ->
         [ mkNode "HsDocTy"
         , toHie a
         ]
-      HsBangTy _ ty ->
+      HsBangTy _ _ ty ->
         [ mkNode "HsBangTy"
         , toHie ty
         ]
-      HsRecTy fields ->
+      HsRecTy _ fields ->
         [ mkNode "HsRecTy"
         , toHie fields
-        ]
-      HsCoreTy _ ->
-        [ mkNode "HsCoreTy"
         ]
       HsExplicitListTy _ _ tys ->
         [ mkNode "HsExplicitListTy"
@@ -1074,22 +1057,26 @@ instance ToHie (LHsType GhcRn) where
         [ mkNode "HsExplicitTupleTy"
         , toHie tys
         ]
-      HsTyLit _ ->
+      HsTyLit _ _ ->
         [ mkNode "HsTyLit"
         ]
-      HsWildCardTy _ ->
+      HsWildCardTy e ->
         [ mkNode "HsWildCardTy"
+        , toHie e
         ]
     where mkNode cons = pure [Node (simpleNodeInfo cons "HsType") span []]
   toHie _ = pure []
 
+instance ToHie HsWildCardInfo where
+  toHie (AnonWildCard name) = toHie $ Use name
+
 instance ToHie (LHsTyVarBndr GhcRn) where
   toHie (L (RealSrcSpan span) bndr) = concatM $ case bndr of
-      UserTyVar var ->
+      UserTyVar _ var ->
         [ mkNode "UserTyVar"
         , toHie $ Bind var
         ]
-      KindedTyVar var kind ->
+      KindedTyVar _ var kind ->
         [ mkNode "KindedTyVar"
         , toHie $ Bind var
         , toHie kind
@@ -1098,7 +1085,7 @@ instance ToHie (LHsTyVarBndr GhcRn) where
   toHie _ = pure []
 
 instance ToHie (LHsQTyVars GhcRn) where
-  toHie (HsQTvs _ vars _) = toHie vars
+  toHie (HsQTvs _ vars) = toHie vars
 
 instance ToHie (LHsContext GhcRn) where
   toHie (L span tys) = concatM $
@@ -1108,7 +1095,7 @@ instance ToHie (LHsContext GhcRn) where
 
 instance ToHie (LConDeclField GhcRn) where
   toHie (L (RealSrcSpan span) field) = concatM $ case field of
-      ConDeclField fields typ _ ->
+      ConDeclField _ fields typ _ ->
         [ mkNode "ConDeclField"
         , toHie fields
         , toHie typ
@@ -1134,7 +1121,7 @@ instance ToHie (LHsExpr a) => ToHie (ArithSeqInfo a) where
 
 instance ToHie (LSpliceDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      SpliceDecl splice _ ->
+      SpliceDecl _ splice _ ->
         [ mkNode "SpliceDecl"
         , toHie splice
         ]
@@ -1173,11 +1160,11 @@ instance ToHie (LBooleanFormula (Located Name)) where
 
 instance ToHie (Located (HsAppType GhcRn)) where
   toHie (L (RealSrcSpan span) typ) = concatM $ case typ of
-      HsAppInfix var ->
+      HsAppInfix _ var ->
         [ mkNode "HsAppInfix"
         , toHie $ Use var
         ]
-      HsAppPrefix t ->
+      HsAppPrefix _ t ->
         [ mkNode "HsAppPrefix"
         , toHie t
         ]
@@ -1190,19 +1177,19 @@ instance ToHie (Located HsIPName) where
 
 instance ToHie (LHsExpr a) => ToHie (Located (HsSplice a)) where
   toHie (L (RealSrcSpan span) sp) = concatM $ case sp of
-      HsTypedSplice _ _ expr ->
+      HsTypedSplice _ _ _ expr ->
         [ mkNode "HsTypedSplice"
         , toHie expr
         ]
-      HsUntypedSplice _ _ expr ->
+      HsUntypedSplice _ _ _ expr ->
         [ mkNode "HsUnTypedSplice"
         , toHie expr
         ]
-      HsQuasiQuote _ _ ispan _ ->
+      HsQuasiQuote _ _ _ ispan _ ->
         [ mkNode "HsQuasiQuote"
         , pure $ locOnly ispan
         ]
-      HsSpliced _ _ ->
+      HsSpliced _ _ _ ->
         [ mkNode "HsSpliced"
         ]
     where mkNode cons = pure [Node (simpleNodeInfo cons "HsSplice") span []]
@@ -1210,7 +1197,7 @@ instance ToHie (LHsExpr a) => ToHie (Located (HsSplice a)) where
 
 instance ToHie (LRoleAnnotDecl GhcRn) where
   toHie (L (RealSrcSpan span) annot) = concatM $ case annot of
-      RoleAnnotDecl var roles ->
+      RoleAnnotDecl _ var roles ->
         [ mkNode "RoleAnnotDecl"
         , toHie $ Use var
         , concatMapM (pure . locOnly . getLoc) roles
@@ -1220,15 +1207,15 @@ instance ToHie (LRoleAnnotDecl GhcRn) where
 
 instance ToHie (LInstDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      ClsInstD d ->
+      ClsInstD _ d ->
         [ mkNode "ClsInstD"
         , toHie d
         ]
-      DataFamInstD d ->
+      DataFamInstD _ d ->
         [ mkNode "DataFamInstD"
         , toHie d
         ]
-      TyFamInstD d ->
+      TyFamInstD _ d ->
         [ mkNode "TyFamInstD"
         , toHie d
         ]
@@ -1261,7 +1248,7 @@ instance ToHie (Context a) => ToHie (RecordPatSynField a)where
 
 instance ToHie (LDerivDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      DerivDecl typ strat overlap ->
+      DerivDecl _ typ strat overlap ->
         [ mkNode "DerivDecl"
         , toHie typ
         , toHie strat
@@ -1272,7 +1259,7 @@ instance ToHie (LDerivDecl GhcRn) where
 
 instance ToHie (LFixitySig GhcRn) where
   toHie (L (RealSrcSpan span) sig) = concatM $ case sig of
-      FixitySig vars _ ->
+      FixitySig _ vars _ ->
         [ mkNode "FixitySig"
         , toHie $ map Use vars
         ]
@@ -1281,7 +1268,7 @@ instance ToHie (LFixitySig GhcRn) where
 
 instance ToHie (LDefaultDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      DefaultDecl typs ->
+      DefaultDecl _ typs ->
         [ mkNode "DefaultDecl"
         , toHie typs
         ]
@@ -1320,7 +1307,7 @@ instance ToHie ForeignExport where
 
 instance ToHie (LWarnDecls GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      Warnings _ warnings ->
+      Warnings _ _ warnings ->
         [ mkNode "Warning"
         , toHie warnings
         ]
@@ -1329,7 +1316,7 @@ instance ToHie (LWarnDecls GhcRn) where
 
 instance ToHie (LWarnDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      Warning vars _ ->
+      Warning _ vars _ ->
         [ mkNode "Warning"
         , toHie $ map Use vars
         ]
@@ -1338,7 +1325,7 @@ instance ToHie (LWarnDecl GhcRn) where
 
 instance ToHie (LAnnDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      HsAnnotation _ prov expr ->
+      HsAnnotation _ _ prov expr ->
         [ mkNode "HsAnnotation"
         , toHie prov
         , toHie expr
@@ -1353,7 +1340,7 @@ instance ToHie (Context (Located a)) => ToHie (AnnProvenance a) where
 
 instance ToHie (LRuleDecls GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      HsRules _ rules ->
+      HsRules _ _ rules ->
         [ mkNode "HsRules"
         , toHie rules
         ]
@@ -1362,7 +1349,7 @@ instance ToHie (LRuleDecls GhcRn) where
 
 instance ToHie (LRuleDecl GhcRn) where
   toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      HsRule rname _ bndrs exprA _ exprB _->
+      HsRule _ rname _ bndrs exprA exprB ->
         [ mkNode "HsRule"
         , pure $ locOnly $ getLoc rname
         , toHie bndrs
@@ -1374,44 +1361,16 @@ instance ToHie (LRuleDecl GhcRn) where
 
 instance ToHie (LRuleBndr GhcRn) where
   toHie (L (RealSrcSpan span) bndr) = concatM $ case bndr of
-      RuleBndr var ->
+      RuleBndr _ var ->
         [ mkNode "RuleBndr"
         , toHie $ Use var
         ]
-      RuleBndrSig var typ ->
+      RuleBndrSig _ var typ ->
         [ mkNode "RuleBndrSig"
         , toHie $ Use var
         , toHie typ
         ]
     where mkNode cons = pure [Node (simpleNodeInfo cons "RuleBndr") span []]
-  toHie _ = pure []
-
-instance ToHie (LVectDecl GhcRn) where
-  toHie (L (RealSrcSpan span) decl) = concatM $ case decl of
-      HsVect _ var expr ->
-        [ mkNode "HsVect"
-        , toHie $ Use var
-        , toHie expr
-        ]
-      HsNoVect _ var ->
-        [ mkNode "HsNoVect"
-        , toHie $ Use var
-        ]
-      HsVectTypeIn _ _ var mvar ->
-        [ mkNode "HsVectTypeIn"
-        , toHie $ Use var
-        , toHie $ fmap Use mvar
-        ]
-      HsVectClassIn _ var ->
-        [ mkNode "HsVectClassIn"
-        , toHie $ Use var
-        ]
-      HsVectInstIn typ ->
-        [ mkNode "HsVectInstIn"
-        , toHie typ
-        ]
-      _ -> []
-    where mkNode cons = pure [Node (simpleNodeInfo cons "VectDecl") span []]
   toHie _ = pure []
 
 instance ToHie (LImportDecl GhcRn) where
@@ -1432,35 +1391,35 @@ instance ToHie (LImportDecl GhcRn) where
 
 instance ToHie (LIE GhcRn) where
   toHie (L (RealSrcSpan span) ie) = concatM $ case ie of
-      IEVar n ->
+      IEVar _ n ->
         [ mkNode "IEVar"
         , toHie n
         ]
-      IEThingAbs n ->
+      IEThingAbs _ n ->
         [ mkNode "IEThingAbs"
         , toHie n
         ]
-      IEThingAll n ->
+      IEThingAll _ n ->
         [ mkNode "IEThingAll"
         , toHie n
         ]
-      IEThingWith n _ ns flds ->
+      IEThingWith _ n _ ns flds ->
         [ mkNode "IEThingWith"
         , toHie n
         , toHie ns
         , toHie flds
         ]
-      IEModuleContents n ->
+      IEModuleContents _ n ->
         [ mkNode "IEModuleContents"
         , toHie n
         ]
-      IEGroup _ _ ->
+      IEGroup _ _ _ ->
         [ mkNode "IEGroup"
         ]
-      IEDoc _ ->
+      IEDoc _ _ ->
         [ mkNode "IEDoc"
         ]
-      IEDocNamed _ ->
+      IEDocNamed _ _ ->
         [ mkNode "IEDocNamed"
         ]
     where mkNode cons = pure [Node (simpleNodeInfo cons "IE") span []]

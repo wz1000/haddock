@@ -1167,7 +1167,7 @@ mkMaybeTokenizedSrc flags tm
               --   return $ Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
               hieAst <- Hie.enrichHie (tm_typechecked_source tm) src []
               liftIO $ putStrLn $ Hie.ppHie hieAst
-              liftIO $ print $ Hie.isValid hieAst
+              liftIO $ print $ Hie.validAst hieAst
             tokens <- liftGhcToErrMsgGhc . liftIO $ mkTokenizedSrc summary src
             return $ Just tokens
         Nothing -> do
