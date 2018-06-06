@@ -36,24 +36,22 @@ data TokenDetails
     | RtkModule GHC.ModuleName
     deriving (Eq)
 
-data HieToken a = HieToken
-    { htkSpan :: Span
-    , htkInfo :: Maybe TokenType
-    , htkDetails :: Maybe TokenDetails
-    } deriving Show
-
 type TypeIndex = Int
 
 ppHie :: Show a => HieAST a -> String
 ppHie = go 0
   where
     pad n = replicate n ' '
-    go n (Leaf a) = pad n ++ show a ++ "\n"
-    go n (Node inf sp children) = pad n ++ "Node " ++ show sp ++ show inf ++ "\n" ++ concatMap (go (n+2)) children
+    go n (Node inf sp children) = unwords 
+      [ pad n
+      , "Node"
+      , show sp
+      , show inf
+      , "\n" ++ concatMap (go (n+2)) children 
+      ]
 
 data HieAST a =
-    Leaf (HieToken a)
-  | Node
+  Node
     { nodeInfo :: NodeInfo a
     , nodeSpan :: Span
     , nodeChildren :: [HieAST a]
@@ -71,6 +69,8 @@ data HieFile = HieFile
 data NodeInfo a = NodeInfo 
     { nodeAnnotations :: [(String,String)] -- Constr, Type
     , nodeType :: Maybe a
+    , tokenInfo :: Maybe TokenType
+    , tokenDetails :: Maybe TokenDetails
     } deriving Show
 
 deriving instance Show TokenDetails

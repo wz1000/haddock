@@ -27,6 +27,7 @@ import Haddock.Backends.Hyperlinker.HieUtils
 
 import Prelude hiding (span)
 
+
 type Token = ()
 
 enrichHie :: GhcMonad m => TypecheckedSource -> RenamedSource -> [Token] -> m (HieAST Type)
@@ -44,7 +45,7 @@ enrichHie ts rs@(hsGrp, imports, exports, _) toks = do
           , exps
 --          , map toHieToken toks
           ]
-    return $ Node (NodeInfo [] Nothing) spanFile children
+    return $ Node (NodeInfo [] Nothing Nothing Nothing) spanFile children
   where
     processGrp grp = concatM
       [ toHie $ hs_valds grp
@@ -62,7 +63,7 @@ enrichHie ts rs@(hsGrp, imports, exports, _) toks = do
 --    toHieToken (Token inf _ span) = Leaf (HieToken span (Just inf) Nothing)
 
 locOnly :: SrcSpan -> [HieAST a]
-locOnly (RealSrcSpan span) = [Node (NodeInfo [] Nothing) span []]
+locOnly (RealSrcSpan span) = [Node (NodeInfo [] Nothing Nothing Nothing) span []]
 locOnly _ = []
 
 concatM :: Monad m => [m [a]] -> m [a]
@@ -72,7 +73,7 @@ makeNode :: String -> String -> Span -> HieAST a
 makeNode cons typ spn = Node (simpleNodeInfo cons typ) spn []
 
 makeTypeNode :: String -> String -> Span -> Type -> HieAST Type
-makeTypeNode cons typ spn etyp = Node (NodeInfo [(cons,typ)] (Just etyp)) spn []
+makeTypeNode cons typ spn etyp = Node (NodeInfo [(cons,typ)] (Just etyp) Nothing Nothing) spn []
 
 class ToHie a where
   toHie :: GhcMonad m => a -> m [HieAST Type]
@@ -92,7 +93,7 @@ instance (ToHie a) => ToHie (Maybe a) where
 data Context a = Bind a | Use a
 
 instance ToHie (Located ModuleName) where
-  toHie (L (RealSrcSpan span) name) = pure $ [Leaf $ HieToken span Nothing (Just $ RtkModule name)]
+  toHie (L (RealSrcSpan span) name) = pure $ [Node (NodeInfo [] Nothing Nothing (Just $ RtkModule name)) span []]
   toHie _ = pure []
 instance ToHie (Context (Located Var)) where
   toHie _ = pure []
@@ -103,10 +104,10 @@ instance ToHie (Context (Located Name)) where
       Bind (L (RealSrcSpan span) name) -> pure varBind
         where
           varBind
-            | isExternalName name = [Leaf $ HieToken span Nothing (Just $ RtkDecl name)]
-            | otherwise       = [Leaf $ HieToken span Nothing (Just $ RtkBind name)]
+            | isExternalName name = [Node (NodeInfo [] Nothing Nothing (Just $ RtkDecl name)) span []]
+            | otherwise       = [Node (NodeInfo [] Nothing Nothing (Just $ RtkBind name)) span []]
       Use (L (RealSrcSpan span) name) -> pure $
-        [Leaf $ HieToken span Nothing (Just $ RtkVar name)]
+        [Node (NodeInfo [] Nothing Nothing (Just $ RtkVar name)) span []]
       _ -> pure []
 
 -- | Dummy instances - never called
@@ -141,7 +142,7 @@ instance HasType (LHsExpr GhcTc) where
   getTypeNode e cons typ spn = do
     hs_env <- getSession
     (_,mbe) <- liftIO $ deSugarExpr hs_env e
-    pure [Node (NodeInfo [(cons,typ)] (exprType <$> mbe)) spn []]
+    pure [Node (NodeInfo [(cons,typ)] (exprType <$> mbe) Nothing Nothing) spn []]
 
 instance ( ToHie (Context (Located (IdP a)))
          , ToHie (LPat a)
