@@ -119,6 +119,9 @@ executable haddock
       Haddock.Backends.HaddockDB
       Haddock.Backends.Hoogle
       Haddock.Backends.Hyperlinker
+      Haddock.Backends.Hyperlinker.HieAst
+      Haddock.Backends.Hyperlinker.HieTypes
+      Haddock.Backends.Hyperlinker.HieUtils
       Haddock.Backends.Hyperlinker.Ast
       Haddock.Backends.Hyperlinker.Parser
       Haddock.Backends.Hyperlinker.Renderer
