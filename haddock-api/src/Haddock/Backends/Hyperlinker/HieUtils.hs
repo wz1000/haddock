@@ -4,19 +4,37 @@ import Prelude hiding (span)
 import Haddock.Backends.Hyperlinker.HieTypes
 import SrcLoc
 import Control.Applicative
+import Control.Monad
 
 astSpan :: HieAST a -> Span
 astSpan (Leaf x) = htkSpan x
 astSpan (Node _ sp _) = sp
 
-validAst :: HieAST a -> Bool
-validAst (Leaf _ ) = True
-validAst (Node _ span children) = all validAst children
-                               && all ((span `containsSpan`) . astSpan) children
-                               && astSorted children
-  where astSorted [] = True
-        astSorted [_] = True
-        astSorted (x:y:xs) = astSpan x `leftOf` astSpan y && astSorted (y:xs)
+validAst :: HieAST a -> Either String ()
+validAst (Leaf _ ) = return ()
+validAst (Node _ span children) = do
+  checkContainment children
+  checkSorted children
+  forM_ children validAst
+  where
+    checkSorted [] = return ()
+    checkSorted [_] = return ()
+    checkSorted (x:y:xs)
+      | astSpan x `leftOf` astSpan y = checkSorted (y:xs)
+      | otherwise = Left $ unwords
+          [ show $ astSpan x
+          , "is not to the left of"
+          , show $ astSpan y
+          ]
+    checkContainment [] = return ()
+    checkContainment (x:xs)
+      | span `containsSpan` (astSpan x) = checkContainment xs
+      | otherwise = Left $ unwords
+          [ show $ span
+          , "does not contain"
+          , show $ astSpan x
+          ]
+
 
 combineNodeInfo :: NodeInfo a -> NodeInfo a -> NodeInfo a
 combineNodeInfo (NodeInfo as ta) (NodeInfo bs tb) = NodeInfo (as ++ bs) (ta <|> tb)
