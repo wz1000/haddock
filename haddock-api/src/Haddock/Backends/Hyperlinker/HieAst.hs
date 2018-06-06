@@ -20,7 +20,7 @@ import TcHsSyn (hsPatType)
 import MonadUtils
 import Desugar (deSugarExpr)
 import CoreUtils (exprType)
-import SrcLoc (mkRealSrcSpan, mkRealSrcLoc)
+import SrcLoc (realSrcSpanStart, realSrcSpanEnd, mkRealSrcSpan)
 
 import Haddock.Backends.Hyperlinker.HieTypes
 import Haddock.Backends.Hyperlinker.HieUtils
@@ -31,24 +31,21 @@ type Token = ()
 
 enrichHie :: GhcMonad m => TypecheckedSource -> RenamedSource -> [Token] -> m (HieAST Type)
 enrichHie ts rs@(hsGrp, imports, exports, _) toks = do
-    liftIO $ putStrLn $ showSDocUnsafe $ ppr ts
-    liftIO $ putStrLn $ showSDocUnsafe $ ppr rs
     tasts <- toHie ts
     rasts <- processGrp hsGrp
-    imps <- toHie imports
+    imps <- toHie $ filter (not . ideclImplicit . unLoc) imports
     exps <- toHie $ fmap (map fst) exports
-    liftIO $ print imps
-    liftIO $ print exps
-    return $ Node (NodeInfo [] Nothing) spanFile $ mergeSortAsts $ concat
-      [ tasts
-      , rasts
---      , imps
---      , exps
---      , map toHieToken toks
-      ]
+    let spanFile = mkRealSrcSpan (realSrcSpanStart $ astSpan $ head children)
+                                 (realSrcSpanEnd   $ astSpan $ last children)
+        children = mergeSortAsts $ concat
+          [ tasts
+          , rasts
+          , imps
+          , exps
+--          , map toHieToken toks
+          ]
+    return $ Node (NodeInfo [] Nothing) spanFile children
   where
-    spanFile = mkRealSrcSpan (mkRealSrcLoc "" 1 1) (mkRealSrcLoc "" 1 1)
-
     processGrp grp = concatM
       [ toHie $ hs_valds grp
       , toHie $ hs_splcds grp
@@ -662,8 +659,8 @@ instance (ToHie (Located label), ToHie arg) => ToHie (LHsRecField' label arg) wh
 
 instance ( ToHie (Context (Located (XFieldOcc a)))
          ) => ToHie (LFieldOcc a) where
-  toHie (L nspan f) = concatM $ case f of 
-    FieldOcc name _ -> 
+  toHie (L nspan f) = concatM $ case f of
+    FieldOcc name _ ->
       [ toHie $ Use $ L nspan name
       ]
     XFieldOcc _ -> []
@@ -672,11 +669,11 @@ instance ( ToHie (Context (Located (XFieldOcc a)))
 instance ( ToHie (Context (Located (XUnambiguous a)))
          , ToHie (Context (Located (XAmbiguous a)))
          ) => ToHie (Located (AmbiguousFieldOcc a)) where
-  toHie (L nspan afo) = concatM $ case afo of 
+  toHie (L nspan afo) = concatM $ case afo of
     Unambiguous name _ ->
       [ toHie $ Use $ L nspan name
       ]
-    Ambiguous name _ -> 
+    Ambiguous name _ ->
       [ toHie $ Use $ L nspan name
       ]
     XAmbiguousFieldOcc _ -> []
