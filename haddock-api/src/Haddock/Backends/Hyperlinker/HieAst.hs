@@ -20,7 +20,7 @@ import TcHsSyn (hsPatType)
 import MonadUtils
 import Desugar (deSugarExpr)
 import CoreUtils (exprType)
-import SrcLoc (realSrcSpanStart, realSrcSpanEnd, mkRealSrcSpan)
+import SrcLoc (realSrcSpanStart, realSrcSpanEnd, mkRealSrcSpan, mkRealSrcLoc)
 
 import Haddock.Backends.Hyperlinker.HieTypes
 import Haddock.Backends.Hyperlinker.HieUtils
@@ -36,8 +36,10 @@ enrichHie ts rs@(hsGrp, imports, exports, _) toks = do
     rasts <- processGrp hsGrp
     imps <- toHie $ filter (not . ideclImplicit . unLoc) imports
     exps <- toHie $ fmap (map fst) exports
-    let spanFile = mkRealSrcSpan (realSrcSpanStart $ astSpan $ head children)
-                                 (realSrcSpanEnd   $ astSpan $ last children)
+    let spanFile = case children of
+          [] -> mkRealSrcSpan (mkRealSrcLoc "" 1 1) (mkRealSrcLoc "" 1 1) 
+          _ -> mkRealSrcSpan (realSrcSpanStart $ astSpan $ head children)
+                             (realSrcSpanEnd   $ astSpan $ last children)
         children = mergeSortAsts $ concat
           [ tasts
           , rasts
@@ -45,7 +47,7 @@ enrichHie ts rs@(hsGrp, imports, exports, _) toks = do
           , exps
 --          , map toHieToken toks
           ]
-    return $ Node (NodeInfo [] Nothing Nothing Nothing) spanFile children
+    return $ Node (NodeInfo [("Module","Module")] Nothing Nothing Nothing) spanFile children
   where
     processGrp grp = concatM
       [ toHie $ hs_valds grp
