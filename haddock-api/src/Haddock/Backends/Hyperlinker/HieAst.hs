@@ -504,8 +504,9 @@ instance ( ToHie (Context (Located (IdP a)))
         [ mkNode "HsTickPragma"
         , toHie expr
         ]
-      HsWrap _ _ _ ->
+      HsWrap _ _ a ->
         [ mkNode "HsWrap"
+        , toHie $ L mspan a
         ]
       HsBracket _ b ->
         [ mkNode "HsBracket p"
