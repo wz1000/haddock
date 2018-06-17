@@ -1160,10 +1160,6 @@ instance ToHie (LHsType GhcRn) where
         [ mkNode "HsTyVar"
         , toHie $ C Use var
         ]
-      HsAppsTy _ apps ->
-        [ mkNode "HsAppsTy"
-        , toHie apps
-        ]
       HsAppTy _ a b ->
         [ mkNode "HsAppTy"
         , toHie a
@@ -1242,6 +1238,7 @@ instance ToHie (LHsType GhcRn) where
         [ mkNode "HsWildCardTy"
         , toHie e
         ]
+      HsStarTy _ _ -> []
       XHsType _ -> []
     where mkNode cons = pure [Node (simpleNodeInfo cons "HsType") span []]
   toHie _ = pure []
@@ -1360,20 +1357,6 @@ instance ToHie (LBooleanFormula (Located Name)) where
         , toHie f
         ]
     where mkNode cons = pure [Node (simpleNodeInfo cons "BooleanFormula") span []]
-  toHie _ = pure []
-
-instance ToHie (Located (HsAppType GhcRn)) where
-  toHie (L (RealSrcSpan span) typ) = concatM $ case typ of
-      HsAppInfix _ var ->
-        [ mkNode "HsAppInfix"
-        , toHie $ C Use var
-        ]
-      HsAppPrefix _ t ->
-        [ mkNode "HsAppPrefix"
-        , toHie t
-        ]
-      XAppType _ -> []
-    where mkNode cons = pure [Node (simpleNodeInfo cons "HsAppType") span []]
   toHie _ = pure []
 
 instance ToHie (Located HsIPName) where

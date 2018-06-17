@@ -30,6 +30,8 @@ import Haddock.Interface.LexParseRn
 import Haddock.Backends.Hyperlinker.Types
 import Haddock.Backends.Hyperlinker.Ast as Hyperlinker
 import Haddock.Backends.Hyperlinker.Parser as Hyperlinker
+import Haddock.Backends.Hyperlinker.HieAst as Hie
+import Haddock.Backends.Hyperlinker.HieUtils as Hie
 
 import Data.Bifunctor
 import Data.Bitraversable
@@ -1201,7 +1203,7 @@ mkMaybeTokenizedSrc dflags flags tm
               --   return $ Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
               hieAst <- Hie.enrichHie (tm_typechecked_source tm) src []
               liftIO $ putStrLn $ Hie.ppHies hieAst
-            tokens <- liftGhcToErrMsgGhc . liftIO $ mkTokenizedSrc summary src
+            tokens <- liftGhcToErrMsgGhc . liftIO $ mkTokenizedSrc dflags summary src
             return $ Just tokens
         Nothing -> do
             liftErrMsg . tell . pure $ concat
