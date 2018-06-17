@@ -1200,8 +1200,7 @@ mkMaybeTokenizedSrc dflags flags tm
               --   let filepath = msHsFilePath summary
               --   return $ Hyperlinker.parse dflags filepath (Utf8.decodeUtf8 rawSrc)
               hieAst <- Hie.enrichHie (tm_typechecked_source tm) src []
-              liftIO $ putStrLn $ Hie.ppHie hieAst
-              liftIO $ print $ Hie.validAst hieAst
+              liftIO $ putStrLn $ Hie.ppHies hieAst
             tokens <- liftGhcToErrMsgGhc . liftIO $ mkTokenizedSrc summary src
             return $ Just tokens
         Nothing -> do

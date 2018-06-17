@@ -29,25 +29,43 @@ data TokenType
     deriving (Show, Eq)
 
 data TokenDetails
-    = RtkVar GHC.Name
-    | RtkType GHC.Name
-    | RtkBind GHC.Name
-    | RtkDecl GHC.Name
+    = RtkVar GHC.Name ContextInfo
     | RtkModule GHC.ModuleName
     deriving (Eq)
 
 type TypeIndex = Int
 
+data ContextInfo =
+    Use
+  | InstBind
+  | TyDecl
+  | Bind Scope
+  | PatBindScope Scope Scope
+  | ClassTyVarScope Scope Scope Scope
+  | ScopedTyVarBind Scope TyVarScope
+    deriving (Eq, Show)
+
+data Scope =
+    ModuleScope
+  | LocalScope Span
+  | NoScope
+    deriving (Eq, Show)
+
+data TyVarScope =
+    ResolvedScope Scope
+  | UnresolvedScope Name.Name
+    deriving (Eq, Show)
+
 ppHie :: Show a => HieAST a -> String
 ppHie = go 0
   where
     pad n = replicate n ' '
-    go n (Node inf sp children) = unwords 
+    go n (Node inf sp children) = unwords
       [ pad n
       , "Node"
       , show sp
       , show inf
-      , "\n" ++ concatMap (go (n+2)) children 
+      , "\n" ++ concatMap (go (n+2)) children
       ]
 
 data HieAST a =
@@ -66,11 +84,11 @@ data HieFile = HieFile
     , hsSrc      :: String
     }
 
-data NodeInfo a = NodeInfo 
+data NodeInfo a = NodeInfo
     { nodeAnnotations :: [(String,String)] -- Constr, Type
     , nodeType :: Maybe a
     , tokenInfo :: Maybe TokenType
-    , tokenDetails :: Maybe TokenDetails
+    , tokenDetails :: [TokenDetails]
     } deriving Show
 
 deriving instance Show TokenDetails
