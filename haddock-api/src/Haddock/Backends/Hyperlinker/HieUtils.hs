@@ -5,9 +5,20 @@ import Haddock.Backends.Hyperlinker.HieTypes
 import SrcLoc
 import Control.Applicative
 import Control.Monad
+import qualified Data.Map as M
 
 astSpan :: HieAST a -> Span
 astSpan (Node _ sp _) = sp
+
+ppHies :: (Show k, Show a) => M.Map k (HieAST a) -> String
+ppHies = M.foldrWithKey go ""
+  where
+    go k a rest = unlines $
+      [ "File: " ++ show k
+      , ppHie a
+      , show $ validAst a
+      , rest
+      ]
 
 validAst :: HieAST a -> Either String ()
 validAst (Node _ span children) = do
@@ -34,8 +45,8 @@ validAst (Node _ span children) = do
           ]
 
 combineNodeInfo :: NodeInfo a -> NodeInfo a -> NodeInfo a
-combineNodeInfo (NodeInfo as ta ai ad) (NodeInfo bs tb bi bd) = 
-  NodeInfo (as ++ bs) (ta <|> tb) (ai <|> bi) (ad <|> bd)
+combineNodeInfo (NodeInfo as ta ai ad) (NodeInfo bs tb bi bd) =
+  NodeInfo (as ++ bs) (ta <|> tb) (ai <|> bi) (ad ++ bd)
 
 -- | One must contain the other. Leaf nodes cannot contain anything
 combineAst :: Show a => HieAST a -> HieAST a -> HieAST a
@@ -57,10 +68,10 @@ mergeAsts xs@(a:as) ys@(b:bs)
   | astSpan b `containsSpan` astSpan a = mergeAsts as (combineAst a b : bs)
   | astSpan a `rightOf` astSpan b = b : mergeAsts xs bs
   | astSpan a `leftOf`  astSpan b = a : mergeAsts as ys
-  | srcSpanFile (astSpan a) == srcSpanFile (astSpan b) = error $ unwords $ 
-      [ "mergeAsts: Spans overlapping" 
-      , show a 
-      , "and" 
+  | srcSpanFile (astSpan a) == srcSpanFile (astSpan b) = error $ unwords $
+      [ "mergeAsts: Spans overlapping"
+      , show a
+      , "and"
       , show b
       ]
   | srcSpanFile (astSpan a) < srcSpanFile (astSpan b) = a : mergeAsts as ys
@@ -90,4 +101,4 @@ mergeSortAsts = go . map pure
     mergePairs (xs:ys:xss) = mergeAsts xs ys : mergePairs xss
 
 simpleNodeInfo :: String -> String -> NodeInfo a
-simpleNodeInfo cons typ = NodeInfo [(cons, typ)] Nothing Nothing Nothing
+simpleNodeInfo cons typ = NodeInfo [(cons, typ)] Nothing Nothing []
