@@ -246,8 +246,8 @@ instance ( ToHie (LMatch a body)
          ) => ToHie (MatchGroup a body) where
   toHie mg = concatM $ case mg of
     MG{ mg_alts = (L span alts) } ->
-      [ -- pure $ locOnly span causes crash in PrimOp.hs
-        toHie alts
+      [ pure $ locOnly span -- causes crash in PrimOp.hs
+      , toHie alts
       ]
     XMatchGroup _ -> []
 
