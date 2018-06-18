@@ -31,7 +31,6 @@ import Control.Monad (when)
 
 import Prelude hiding (span)
 
-
 type Token = ()
 
 enrichHie :: GhcMonad m => TypecheckedSource -> RenamedSource -> [Token] -> m (M.Map FastString (HieAST Type))
@@ -147,7 +146,7 @@ instance (ToHie a) => ToHie (Maybe a) where
 data Context a = C ContextInfo a
 
 data RScoped a = RS Scope a
--- ^ Scope spans over everything to the right of a, not including a
+-- ^ Scope spans over everything to the right of a, (mostly) not including a(Includes a in a few special cases like recursive do bindings)
 
 data PScoped a = PS Scope Scope a
 -- ^ First Scope spans over the use site of the pattern, second spans over the
@@ -157,7 +156,7 @@ data FScoped a = FS Scope a
 -- ^ Scope spans over all of a's scope, including a itself
 
 data CScoped a = CS Scope Scope Scope a
--- Context scope, binder scope, class decl scope
+-- ^ Context scope, binder scope, class decl scope
 
 instance ToHie (Located ModuleName) where
   toHie (L (RealSrcSpan span) name) = pure $ [Node (NodeInfo [] Nothing Nothing (pure $ RtkModule name)) span []]
