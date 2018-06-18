@@ -22,7 +22,6 @@ import Desugar (deSugarExpr)
 import CoreUtils (exprType)
 import SrcLoc (realSrcSpanStart, realSrcSpanEnd, mkRealSrcSpan, mkRealSrcLoc, combineSrcSpans)
 import FastString (FastString)
-import HsDumpAst
 
 import Haddock.Backends.Hyperlinker.HieTypes
 import Haddock.Backends.Hyperlinker.HieUtils
@@ -59,9 +58,6 @@ enrichHie ts rs@(hsGrp, imports, exports, _) toks = do
           , exps
 --          , map toHieToken toks
           ]
-    when (any (== "compiler/stage2/build/primop-primop-info.hs-incl") $ M.keys asts) $ liftIO $ do
-      putStrLn $ showSDocUnsafe $ showAstData NoBlankSrcSpan ts
-      putStrLn $ showSDocUnsafe $ showAstData NoBlankSrcSpan rs
     return asts
   where
     processGrp grp = concatM
