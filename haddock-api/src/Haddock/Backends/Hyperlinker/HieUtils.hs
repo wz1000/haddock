@@ -6,6 +6,7 @@ import SrcLoc
 import Control.Applicative
 import Control.Monad
 import qualified Data.Map as M
+import qualified Data.Set as S
 
 astSpan :: HieAST a -> Span
 astSpan (Node _ sp _) = sp
@@ -44,9 +45,17 @@ validAst (Node _ span children) = do
           , show $ astSpan x
           ]
 
+combineIdentifierDetails :: IdentifierDetails a -> IdentifierDetails a -> IdentifierDetails a
+combineIdentifierDetails (mt1, ci) (mt2, _) = (mt1 <|> mt2, ci)
+
+combineNodeIdentifiers :: NodeIdentifiers a -> NodeIdentifiers a -> NodeIdentifiers a
+combineNodeIdentifiers (names1, mdl1) (names2, mdl2) = (names, mdl1 <|> mdl2)
+  where
+    names = M.unionWith combineIdentifierDetails names1 names2
+
 combineNodeInfo :: NodeInfo a -> NodeInfo a -> NodeInfo a
 combineNodeInfo (NodeInfo as ta ai ad) (NodeInfo bs tb bi bd) =
-  NodeInfo (as ++ bs) (ta <|> tb) (ai <|> bi) (ad ++ bd)
+  NodeInfo (S.union as bs) (ta <|> tb) (ai <|> bi) (combineNodeIdentifiers ad bd)
 
 -- | One must contain the other. Leaf nodes cannot contain anything
 combineAst :: Show a => HieAST a -> HieAST a -> HieAST a
@@ -101,4 +110,4 @@ mergeSortAsts = go . map pure
     mergePairs (xs:ys:xss) = mergeAsts xs ys : mergePairs xss
 
 simpleNodeInfo :: String -> String -> NodeInfo a
-simpleNodeInfo cons typ = NodeInfo [(cons, typ)] Nothing Nothing []
+simpleNodeInfo cons typ = NodeInfo (S.singleton (cons, typ)) Nothing Nothing (M.empty, Nothing)

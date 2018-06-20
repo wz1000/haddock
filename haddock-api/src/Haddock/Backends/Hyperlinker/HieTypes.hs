@@ -8,6 +8,8 @@ import qualified Name
 import qualified Module
 
 import Data.Array (Array)
+import Data.Map (Map)
+import Data.Set (Set)
 
 type Position = GHC.RealSrcLoc
 type Span = GHC.RealSrcSpan
@@ -28,15 +30,14 @@ data TokenType
     | TkUnknown
     deriving (Show, Eq)
 
-data TokenDetails
-    = RtkVar GHC.Name ContextInfo
-    | RtkModule GHC.ModuleName
-    deriving (Eq)
+type IdentifierDetails a = (Maybe a, ContextInfo)
+-- ^ We need to include types with identifiers because sometimes multiple identifiers occur in the span(Overloaded Record Fields and so on)
 
 type TypeIndex = Int
 
 data ContextInfo =
     Use
+  | MatchBind
   | InstBind
   | TyDecl
   | Bind Scope
@@ -85,13 +86,13 @@ data HieFile = HieFile
     }
 
 data NodeInfo a = NodeInfo
-    { nodeAnnotations :: [(String,String)] -- Constr, Type
-    , nodeType :: Maybe a
-    , tokenInfo :: Maybe TokenType
-    , tokenDetails :: [TokenDetails]
+    { nodeAnnotations :: Set (String,String) -- Constr, Type
+    , tokenInfo :: Maybe TokenType -- The kind of token this corresponds to, if any, for syntax highlighting purposes
+    , nodeType :: Maybe a -- The haskell type of this node, if any
+    , nodeIdentifiers :: NodeIdentifiers a -- All the identifiers
     } deriving Show
 
-deriving instance Show TokenDetails
+type NodeIdentifiers a = (Map GHC.Name (IdentifierDetails a), Maybe GHC.ModuleName)
 
 instance Show Name.Name where
   show = Name.nameStableString
