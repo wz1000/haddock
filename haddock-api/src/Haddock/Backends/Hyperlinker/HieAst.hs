@@ -1245,11 +1245,6 @@ instance ToHie (TScoped (LHsType GhcRn)) where
         , toHie ip
         , toHie ty
         ]
-      HsEqTy _ a b ->
-        [ mkNode "HsEqTy"
-        , toHie a
-        , toHie b
-        ]
       HsKindSig _ a b ->
         [ mkNode "HsKindSig"
         , toHie a
