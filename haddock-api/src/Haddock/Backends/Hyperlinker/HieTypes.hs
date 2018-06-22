@@ -53,8 +53,8 @@ data Scope =
     deriving (Eq, Show)
 
 data TyVarScope =
-    ResolvedScope Scope
-  | UnresolvedScope Name.Name
+    ResolvedScopes [Scope]
+  | UnresolvedScope [Name.Name]
     deriving (Eq, Show)
 
 ppHie :: Show a => HieAST a -> String

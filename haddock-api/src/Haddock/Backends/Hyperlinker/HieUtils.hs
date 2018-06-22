@@ -3,8 +3,12 @@ module Haddock.Backends.Hyperlinker.HieUtils where
 import Prelude hiding (span)
 import Haddock.Backends.Hyperlinker.HieTypes
 import SrcLoc
+import Name
+import FastString (FastString)
 import Control.Applicative
 import Control.Monad
+import Data.Monoid
+import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
 
@@ -20,6 +24,84 @@ ppHies = M.foldrWithKey go ""
       , show $ validAst a
       , rest
       ]
+
+resolveTyVarScopes :: M.Map FastString (HieAST a) -> M.Map FastString (HieAST a)
+resolveTyVarScopes asts = M.map go asts
+  where
+    go ast = resolveTyVarScopeLocal ast asts
+
+resolveTyVarScopeLocal :: HieAST a -> M.Map FastString (HieAST a) -> HieAST a
+resolveTyVarScopeLocal ast asts = go ast
+  where
+    resolveNameScope (typ, ScopedTyVarBind sc tysc) =
+      (typ, ScopedTyVarBind sc (resolveScope tysc))
+    resolveNameScope x = x
+    resolveScope tysc@(UnresolvedScope names) =
+      ResolvedScopes $ concatMap (\name -> map LocalScope $ maybeToList $ getNameBinding name asts) names
+    resolveScope tysc = tysc
+    go (Node info span children) = Node info' span $ map go children
+      where
+        info' = info { nodeIdentifiers = idents }
+        idents = case nodeIdentifiers info of
+          (names, mdl) -> (names', mdl)
+            where
+              names' = M.map resolveNameScope names
+
+getNameBinding :: Name -> M.Map FastString (HieAST a) -> Maybe Span
+getNameBinding n asts = case nameSrcSpan n of
+  RealSrcSpan sp -> do -- @Maybe
+    ast <- M.lookup (srcSpanFile sp) asts
+    let bindCond = any ((=="HsBindLR") . snd) . S.elems . nodeAnnotations . nodeInfo
+    defNode <- smallestContainingSatisfying sp bindCond ast
+    return $ astSpan defNode
+  _ -> Nothing
+
+getNameScope :: Name -> M.Map FastString (HieAST a) -> Maybe [Scope]
+getNameScope n asts = case nameSrcSpan n of
+  RealSrcSpan sp -> do -- @Maybe
+    ast <- M.lookup (srcSpanFile sp) asts
+    defNode <- selectLargestContainedBy sp ast
+    getFirst $ foldMap First $ do -- @[]
+      node <- flattenAst defNode
+      (_, inf) <- maybeToList
+        $ M.lookup n $ fst $ nodeIdentifiers $ nodeInfo node
+      return $ case inf of
+        Bind sc -> Just [sc]
+        PatBindScope a b -> Just [a, b]
+        ClassTyVarScope a b c -> Just [a,b,c]
+        ScopedTyVarBind a (ResolvedScopes xs) -> Just $ a:xs
+        ScopedTyVarBind a _ -> Just [a]
+        _ -> Nothing
+  _ -> Nothing
+
+flattenAst :: HieAST a -> [HieAST a]
+flattenAst n =
+  n{nodeChildren = []} : concatMap flattenAst (nodeChildren n)
+
+smallestContainingSatisfying :: Span -> (HieAST a -> Bool) -> HieAST a -> Maybe (HieAST a)
+smallestContainingSatisfying sp cond node
+  | astSpan node `containsSpan` sp = getFirst $ mconcat
+      [ foldMap (First . smallestContainingSatisfying sp cond) $ nodeChildren node
+      , First $ if cond node then Just node else Nothing
+      ]
+  | sp `containsSpan` astSpan node = Nothing
+  | otherwise = Nothing
+
+selectLargestContainedBy :: Span -> HieAST a -> Maybe (HieAST a)
+selectLargestContainedBy sp node
+  | sp `containsSpan` astSpan node = Just node
+  | astSpan node `containsSpan` sp =
+      getFirst $ foldMap (First . selectLargestContainedBy sp) $ nodeChildren node
+  | otherwise = Nothing
+
+selectSmallestContaining :: Span -> HieAST a -> Maybe (HieAST a)
+selectSmallestContaining sp node
+  | astSpan node `containsSpan` sp = getFirst $ mconcat
+      [ foldMap (First . selectSmallestContaining sp) $ nodeChildren node
+      , First (Just node)
+      ]
+  | sp `containsSpan` astSpan node = Nothing
+  | otherwise = Nothing
 
 validAst :: HieAST a -> Either String ()
 validAst (Node _ span children) = do
@@ -77,14 +159,12 @@ mergeAsts xs@(a:as) ys@(b:bs)
   | astSpan b `containsSpan` astSpan a = mergeAsts as (combineAst a b : bs)
   | astSpan a `rightOf` astSpan b = b : mergeAsts xs bs
   | astSpan a `leftOf`  astSpan b = a : mergeAsts as ys
-  | srcSpanFile (astSpan a) == srcSpanFile (astSpan b) = error $ unwords $
+  | otherwise = error $ unwords $
       [ "mergeAsts: Spans overlapping"
       , show a
       , "and"
       , show b
       ]
-  | srcSpanFile (astSpan a) < srcSpanFile (astSpan b) = a : mergeAsts as ys
-  | srcSpanFile (astSpan a) > srcSpanFile (astSpan b) = b : mergeAsts xs bs
 
 rightOf :: Span -> Span -> Bool
 rightOf s1 s2
