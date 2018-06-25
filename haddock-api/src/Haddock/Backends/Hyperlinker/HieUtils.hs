@@ -4,19 +4,26 @@ import Prelude hiding (span)
 import Haddock.Backends.Hyperlinker.HieTypes
 import SrcLoc
 import Name
+import GHC (Type)
 import FastString (FastString)
 import Control.Applicative
 import Control.Monad
 import Data.Monoid
 import Data.Maybe
+import Data.Either
 import qualified Data.Map as M
 import qualified Data.Set as S
 
 astSpan :: HieAST a -> Span
 astSpan (Node _ sp _) = sp
 
-ppHies :: (Show k, Show a) => M.Map k (HieAST a) -> String
-ppHies = M.foldrWithKey go ""
+ppHies :: Show a => M.Map FastString (HieAST a) -> String
+ppHies asts = unlines $
+    [ M.foldrWithKey go "" asts
+    , case validateScopes asts of
+        [] -> "Scopes are valid"
+        xs -> unlines $ "Scopes are invalid with errors: ":xs
+    ]
   where
     go k a rest = unlines $
       [ "File: " ++ show k
@@ -33,50 +40,73 @@ resolveTyVarScopes asts = M.map go asts
 resolveTyVarScopeLocal :: HieAST a -> M.Map FastString (HieAST a) -> HieAST a
 resolveTyVarScopeLocal ast asts = go ast
   where
-    resolveNameScope (typ, ScopedTyVarBind sc tysc) =
-      (typ, ScopedTyVarBind sc (resolveScope tysc))
-    resolveNameScope x = x
-    resolveScope tysc@(UnresolvedScope names) =
-      ResolvedScopes $ concatMap (\name -> map LocalScope $ maybeToList $ getNameBinding name asts) names
-    resolveScope tysc = tysc
+    resolveNameScope dets = dets{identInfo = S.map resolveScope (identInfo dets)}
+    resolveScope (TyVarBind sc (UnresolvedScope names Nothing)) =
+      TyVarBind sc $ ResolvedScopes 
+        $ concatMap (\name -> map LocalScope $ maybeToList $ getNameBinding name asts) names
+    resolveScope (TyVarBind sc (UnresolvedScope names (Just sp))) =
+      TyVarBind sc $ ResolvedScopes 
+        $ concatMap (\name -> 
+            map LocalScope $ maybeToList $ getNameBindingInClass name sp asts) names
+    resolveScope scope = scope
     go (Node info span children) = Node info' span $ map go children
       where
         info' = info { nodeIdentifiers = idents }
-        idents = case nodeIdentifiers info of
-          (names, mdl) -> (names', mdl)
-            where
-              names' = M.map resolveNameScope names
+        idents = M.map resolveNameScope $ nodeIdentifiers info
 
 getNameBinding :: Name -> M.Map FastString (HieAST a) -> Maybe Span
-getNameBinding n asts = case nameSrcSpan n of
-  RealSrcSpan sp -> do -- @Maybe
-    ast <- M.lookup (srcSpanFile sp) asts
-    let bindCond = any ((=="HsBindLR") . snd) . S.elems . nodeAnnotations . nodeInfo
-    defNode <- smallestContainingSatisfying sp bindCond ast
-    return $ astSpan defNode
-  _ -> Nothing
+getNameBinding n asts = do
+  (_,msp) <- getNameScopeAndBinding n asts
+  msp
 
 getNameScope :: Name -> M.Map FastString (HieAST a) -> Maybe [Scope]
-getNameScope n asts = case nameSrcSpan n of
+getNameScope n asts = do
+  (scopes,_) <- getNameScopeAndBinding n asts
+  return scopes
+
+getNameBindingInClass :: Name -> Span -> M.Map FastString (HieAST a) -> Maybe Span
+getNameBindingInClass n sp asts = do
+  ast <- M.lookup (srcSpanFile sp) asts
+  getFirst $ foldMap First $ do
+    child <- flattenAst ast
+    dets <- maybeToList
+      $ M.lookup (Right n) $ nodeIdentifiers $ nodeInfo child
+    let binding = getFirst $ foldMap (First . getBindSiteFromContext) (identInfo dets)
+    return binding
+
+getNameScopeAndBinding :: Name -> M.Map FastString (HieAST a) -> Maybe ([Scope], Maybe Span)
+getNameScopeAndBinding n asts = case nameSrcSpan n of
   RealSrcSpan sp -> do -- @Maybe
     ast <- M.lookup (srcSpanFile sp) asts
     defNode <- selectLargestContainedBy sp ast
     getFirst $ foldMap First $ do -- @[]
       node <- flattenAst defNode
-      (_, inf) <- maybeToList
-        $ M.lookup n $ fst $ nodeIdentifiers $ nodeInfo node
-      return $ case inf of
-        Bind sc -> Just [sc]
-        PatBindScope a b -> Just [a, b]
-        ClassTyVarScope a b c -> Just [a,b,c]
-        ScopedTyVarBind a (ResolvedScopes xs) -> Just $ a:xs
-        ScopedTyVarBind a _ -> Just [a]
-        _ -> Nothing
+      dets <- maybeToList
+        $ M.lookup (Right n) $ nodeIdentifiers $ nodeInfo node
+      scopes <- maybeToList $ foldMap getScopeFromContext (identInfo dets)
+      let binding = getFirst $ foldMap (First . getBindSiteFromContext) (identInfo dets)
+      return $ Just (scopes, binding)
   _ -> Nothing
+
+getScopeFromContext :: ContextInfo -> Maybe [Scope]
+getScopeFromContext (ValBind _ sc _) = Just [sc]
+getScopeFromContext (PatBindScope a b _) = Just [a, b]
+getScopeFromContext (ClassTyDecl _) = Just [ModuleScope]
+getScopeFromContext (Decl _ _) = Just [ModuleScope]
+getScopeFromContext (TyVarBind a (ResolvedScopes xs)) = Just $ a:xs
+getScopeFromContext (TyVarBind a _) = Just [a]
+getScopeFromContext _ = Nothing
+
+getBindSiteFromContext :: ContextInfo -> Maybe Span
+getBindSiteFromContext (ValBind _ _ sp) = sp
+getBindSiteFromContext (PatBindScope _ _ sp) = sp
+getBindSiteFromContext (ClassTyDecl sp) = sp
+getBindSiteFromContext (Decl _ sp) = sp
+getBindSiteFromContext _ = Nothing
 
 flattenAst :: HieAST a -> [HieAST a]
 flattenAst n =
-  n{nodeChildren = []} : concatMap flattenAst (nodeChildren n)
+  n : concatMap flattenAst (nodeChildren n)
 
 smallestContainingSatisfying :: Span -> (HieAST a -> Bool) -> HieAST a -> Maybe (HieAST a)
 smallestContainingSatisfying sp cond node
@@ -127,22 +157,50 @@ validAst (Node _ span children) = do
           , show $ astSpan x
           ]
 
-combineIdentifierDetails :: IdentifierDetails a -> IdentifierDetails a -> IdentifierDetails a
-combineIdentifierDetails (mt1, ci) (mt2, _) = (mt1 <|> mt2, ci)
+validateScopes :: M.Map FastString (HieAST a) -> [String]
+validateScopes asts = foldMap go asts
+  where 
+    go ast = do
+      child <- flattenAst ast
+      let nodeIdents = nodeIdentifiers $ nodeInfo child
+      ident <- rights $ M.keys nodeIdents
+      guard (any isOccurrence $ identInfo $ nodeIdents M.! Right ident)
+      case getNameScope ident asts of
+        Nothing
+          | definedInAsts asts ident && notDerivingJunk ident ->  
+            [ "Can't resolve scopes for"
+            , "Name", show ident, "at position", show (astSpan child)
+            , "defined at", show (nameSrcSpan ident)]
+          | otherwise -> []
+        Just scopes -> 
+          if any (`scopeContainsSpan` (astSpan child)) scopes
+          then []
+          else return $ unwords $
+            [ "Name", show ident, "at position", show (astSpan child)
+            , "doesn't occur in calculated scope", show scopes]
 
-combineNodeIdentifiers :: NodeIdentifiers a -> NodeIdentifiers a -> NodeIdentifiers a
-combineNodeIdentifiers (names1, mdl1) (names2, mdl2) = (names, mdl1 <|> mdl2)
-  where
-    names = M.unionWith combineIdentifierDetails names1 names2
+notDerivingJunk :: Name -> Bool
+notDerivingJunk n = x /= "c" && x /= "C"
+  where x = (take 1 $ reverse $ takeWhile (/='$') $ reverse $ getOccString n)
 
-combineNodeInfo :: NodeInfo a -> NodeInfo a -> NodeInfo a
-combineNodeInfo (NodeInfo as ta ai ad) (NodeInfo bs tb bi bd) =
-  NodeInfo (S.union as bs) (ta <|> tb) (ai <|> bi) (combineNodeIdentifiers ad bd)
+definedInAsts :: M.Map FastString (HieAST a) -> Name -> Bool
+definedInAsts asts n = case nameSrcSpan n of
+  RealSrcSpan sp -> srcSpanFile sp `elem` M.keys asts
+  _ -> False
+
+isOccurrence :: ContextInfo -> Bool
+isOccurrence Use = True
+isOccurrence _ = False
+
+scopeContainsSpan :: Scope -> Span -> Bool
+scopeContainsSpan NoScope _ = False
+scopeContainsSpan ModuleScope _ = True
+scopeContainsSpan (LocalScope a) b = a `containsSpan` b
 
 -- | One must contain the other. Leaf nodes cannot contain anything
 combineAst :: Show a => HieAST a -> HieAST a -> HieAST a
 combineAst a@(Node aInf aSpn xs) b@(Node bInf bSpn ys)
-  | aSpn == bSpn = Node (combineNodeInfo aInf bInf) aSpn (mergeAsts xs ys)
+  | aSpn == bSpn = Node (aInf <> bInf) aSpn (mergeAsts xs ys)
   | aSpn `containsSpan` bSpn = combineAst b a
 combineAst a (Node xs span children) = Node xs span (insertAst a children)
 
@@ -190,4 +248,35 @@ mergeSortAsts = go . map pure
     mergePairs (xs:ys:xss) = mergeAsts xs ys : mergePairs xss
 
 simpleNodeInfo :: String -> String -> NodeInfo a
-simpleNodeInfo cons typ = NodeInfo (S.singleton (cons, typ)) Nothing Nothing (M.empty, Nothing)
+simpleNodeInfo cons typ = NodeInfo (S.singleton (cons, typ)) Nothing Nothing M.empty
+
+locOnly :: SrcSpan -> [HieAST a]
+locOnly (RealSrcSpan span) =
+  [Node mempty span []]
+locOnly _ = []
+
+mkScope :: SrcSpan -> Scope
+mkScope (RealSrcSpan sp) = LocalScope sp
+mkScope _ = NoScope
+
+mkLScope :: Located a -> Scope
+mkLScope = mkScope . getLoc
+
+combineScopes :: Scope -> Scope -> Scope
+combineScopes ModuleScope _ = ModuleScope
+combineScopes _ ModuleScope = ModuleScope
+combineScopes NoScope x = x
+combineScopes x NoScope = x
+combineScopes (LocalScope a) (LocalScope b) =
+  mkScope $ combineSrcSpans (RealSrcSpan a) (RealSrcSpan b)
+
+makeNode :: Applicative m => String -> SrcSpan -> String -> m [HieAST a]
+makeNode typ (RealSrcSpan span) cons = pure [Node (simpleNodeInfo cons typ) span []]
+makeNode _ _ _ = pure []
+
+makeTypeNode :: String -> String -> SrcSpan -> Type -> [HieAST Type]
+makeTypeNode cons typ spn etyp = case spn of
+  RealSrcSpan span ->
+    [Node (NodeInfo (S.singleton (cons,typ)) Nothing (Just etyp) M.empty) span []]
+  _ -> []
+
