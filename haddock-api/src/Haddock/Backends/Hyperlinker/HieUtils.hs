@@ -42,11 +42,11 @@ resolveTyVarScopeLocal ast asts = go ast
   where
     resolveNameScope dets = dets{identInfo = S.map resolveScope (identInfo dets)}
     resolveScope (TyVarBind sc (UnresolvedScope names Nothing)) =
-      TyVarBind sc $ ResolvedScopes 
+      TyVarBind sc $ ResolvedScopes
         $ concatMap (\name -> map LocalScope $ maybeToList $ getNameBinding name asts) names
     resolveScope (TyVarBind sc (UnresolvedScope names (Just sp))) =
-      TyVarBind sc $ ResolvedScopes 
-        $ concatMap (\name -> 
+      TyVarBind sc $ ResolvedScopes
+        $ concatMap (\name ->
             map LocalScope $ maybeToList $ getNameBindingInClass name sp asts) names
     resolveScope scope = scope
     go (Node info span children) = Node info' span $ map go children
@@ -100,8 +100,6 @@ getScopeFromContext _ = Nothing
 getBindSiteFromContext :: ContextInfo -> Maybe Span
 getBindSiteFromContext (ValBind _ _ sp) = sp
 getBindSiteFromContext (PatBindScope _ _ sp) = sp
-getBindSiteFromContext (ClassTyDecl sp) = sp
-getBindSiteFromContext (Decl _ sp) = sp
 getBindSiteFromContext _ = Nothing
 
 flattenAst :: HieAST a -> [HieAST a]
@@ -159,7 +157,7 @@ validAst (Node _ span children) = do
 
 validateScopes :: M.Map FastString (HieAST a) -> [String]
 validateScopes asts = foldMap go asts
-  where 
+  where
     go ast = do
       child <- flattenAst ast
       let nodeIdents = nodeIdentifiers $ nodeInfo child
@@ -167,12 +165,12 @@ validateScopes asts = foldMap go asts
       guard (any isOccurrence $ identInfo $ nodeIdents M.! Right ident)
       case getNameScope ident asts of
         Nothing
-          | definedInAsts asts ident && notDerivingJunk ident ->  
+          | definedInAsts asts ident && notDerivingJunk ident ->
             [ "Can't resolve scopes for"
             , "Name", show ident, "at position", show (astSpan child)
             , "defined at", show (nameSrcSpan ident)]
           | otherwise -> []
-        Just scopes -> 
+        Just scopes ->
           if any (`scopeContainsSpan` (astSpan child)) scopes
           then []
           else return $ unwords $

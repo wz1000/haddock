@@ -90,7 +90,7 @@ grhss_span (XGRHSs _) = error "XGRHS has no span"
 bindingsOnly :: [Context Name] -> [HieAST a]
 bindingsOnly [] = []
 bindingsOnly (C c n : xs) = case nameSrcSpan n of
-  RealSrcSpan span -> 
+  RealSrcSpan span ->
       Node mempty{nodeIdentifiers = M.singleton (Right n) info} span [] : bindingsOnly xs
     where info = mempty{identInfo = S.singleton c}
   _ -> bindingsOnly xs
@@ -210,6 +210,7 @@ instance HasLoc thing => HasLoc (TScoped thing) where
 
 instance HasLoc (LHsQTyVars GhcRn) where
   loc (HsQTvs _ vs) = loc vs
+  loc _ = noSrcSpan
 
 instance HasLoc thing => HasLoc (HsImplicitBndrs a thing) where
   loc (HsIB _ a) = loc a
@@ -394,7 +395,7 @@ instance ( ToHie (Context (Located (IdP a)))
             (RecCon r) -> foldr go NoScope r
           go (RecordPatSynField a b) c = combineScopes c
             $ combineScopes (mkLScope a) (mkLScope b)
-          detSpan = case detScope of 
+          detSpan = case detScope of
             LocalScope a -> Just a
             _ -> Nothing
           toBind (PrefixCon args) = PrefixCon $ map (C Use) args
@@ -528,7 +529,7 @@ instance ( ToHie (Context (Located (IdP a)))
           contextify (RecCon r) = RecCon $ contextify_rec r
           contextify_rec (HsRecFields fields a) = HsRecFields (map go $ scoped_fields) a
             where
-              go (RS fscope (L spn (HsRecField lbl pat pun))) = 
+              go (RS fscope (L spn (HsRecField lbl pat pun))) =
                 L spn $ HsRecField lbl (PS rsp scope fscope pat) pun
               scoped_fields = listScopes pscope fields
 
@@ -844,7 +845,7 @@ instance ( ToHie (LHsExpr a)
       HsIPBinds _ _ -> [mkNode "HsIPBinds"]
       HsValBinds _ valBinds ->
         [ mkNode "HsValBinds"
-        , toHie $ BSC RegularBind (combineScopes scope $ mkScope span) 
+        , toHie $ BSC RegularBind (combineScopes scope $ mkScope span)
                       (SI BindSig Nothing) valBinds
         ]
       XHsLocalBindsLR _ -> []
@@ -1106,7 +1107,7 @@ instance ToHie (Located (FunDep (Located Name))) where
     ]
     where mkNode = makeNode "FunDep" span
 
-instance (ToHie pats, ToHie rhs, HasLoc pats, HasLoc rhs) 
+instance (ToHie pats, ToHie rhs, HasLoc pats, HasLoc rhs)
     => ToHie (TScoped (FamEqn GhcRn pats rhs)) where
   toHie (TS _ f) = toHie f
 
@@ -1656,23 +1657,23 @@ instance ToHie (LRuleDecl GhcRn) where
       HsRule _ rname _ bndrs exprA exprB ->
         [ mkNode "HsRule"
         , pure $ locOnly $ getLoc rname
-        , toHie bndrs
+        , toHie $ map (RS $ mkScope span) bndrs
         , toHie exprA
         , toHie exprB
         ]
       XRuleDecl _ -> []
     where mkNode = makeNode "RuleDecl" span
 
-instance ToHie (LRuleBndr GhcRn) where
-  toHie (L span bndr) = concatM $ case bndr of
+instance ToHie (RScoped (LRuleBndr GhcRn)) where
+  toHie (RS sc (L span bndr)) = concatM $ case bndr of
       RuleBndr _ var ->
         [ mkNode "RuleBndr"
-        , toHie $ C Use var
+        , toHie $ C (ValBind RegularBind sc Nothing) var
         ]
       RuleBndrSig _ var typ ->
         [ mkNode "RuleBndrSig"
-        , toHie $ C Use var
-        , toHie $ TS (ResolvedScopes []) typ
+        , toHie $ C (ValBind RegularBind sc Nothing) var
+        , toHie $ TS (ResolvedScopes [sc]) typ
         ]
       XRuleBndr _ -> []
     where mkNode = makeNode "RuleBndr" span
