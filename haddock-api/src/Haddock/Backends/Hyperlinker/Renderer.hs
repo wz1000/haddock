@@ -176,17 +176,19 @@ richTokenStyle
   :: Bool         -- ^ are we lacking a type annotation?
   -> ContextInfo  -- ^ in what context did this token show up?
   -> [StyleClass]
-richTokenStyle True  Use           = ["hs-type"]
-richTokenStyle False Use           = ["hs-var"]
-richTokenStyle  _    RecField{}    = ["hs-var"]
-richTokenStyle  _    PatternBind{} = ["hs-var"]
-richTokenStyle  _    MatchBind{}   = ["hs-var"]
-richTokenStyle  _    TyVarBind{}   = ["hs-type"]
-richTokenStyle  _    ValBind{}     = ["hs-var"]
-richTokenStyle  _    TyDecl        = ["hs-type"]
-richTokenStyle  _    ClassTyDecl{} = ["hs-type"]
-richTokenStyle  _    Decl{}        = ["hs-var"]
-richTokenStyle  _    IEThing{}     = []  -- could be either a value or type
+richTokenStyle True  Use               = ["hs-type"]
+richTokenStyle False Use               = ["hs-var"]
+richTokenStyle  _    RecField{}        = ["hs-var"]
+richTokenStyle  _    PatternBind{}     = ["hs-var"]
+richTokenStyle  _    MatchBind{}       = ["hs-var"]
+richTokenStyle  _    TyVarBind{}       = ["hs-type"]
+richTokenStyle  _    ValBind{}         = ["hs-var"]
+richTokenStyle  _    TyDecl            = ["hs-type"]
+richTokenStyle  _    ClassTyDecl{}     = ["hs-type"]
+richTokenStyle  _    Decl{}            = ["hs-var"]
+richTokenStyle  _    IEThing{}         = []  -- could be either a value or type
+richTokenStyle  _    EvidenceVarBind{} = []
+richTokenStyle  _    EvidenceVarUse{}  = []
 
 tokenStyle :: TokenType -> [StyleClass]
 tokenStyle TkIdentifier = ["hs-identifier"]
